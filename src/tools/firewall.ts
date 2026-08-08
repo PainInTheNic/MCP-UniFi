@@ -59,7 +59,6 @@ interface AclRule {
 
 interface DnsPolicy {
   id: string;
-  name?: string;
   domain?: string;
   type?: string;
   enabled?: boolean;
@@ -153,7 +152,10 @@ export function registerFirewallTools(server: McpServer, client: UniFiClient): v
         if (policy.enabled === enabled) {
           return textResult(`Firewall policy "${policy.name ?? policyId}" is already ${enabled ? "enabled" : "disabled"} — no change made.`);
         }
-        await client.put(`/v1/sites/${site}/firewall/policies/${policyId}`, { ...policy, enabled });
+        // Send only the update-schema fields: server-managed id/index/metadata
+        // are response-only and not part of the "Create or update" contract.
+        const { id: _id, index: _index, metadata: _metadata, ...updatable } = policy;
+        await client.put(`/v1/sites/${site}/firewall/policies/${policyId}`, { ...updatable, enabled });
         return textResult(`Firewall policy "${policy.name ?? policyId}" is now ${enabled ? "ENABLED" : "DISABLED"}.`);
       }),
   );
@@ -196,22 +198,24 @@ export function registerFirewallTools(server: McpServer, client: UniFiClient): v
     {
       title: "List ACL Rules",
       description:
-        "List layer-2/switch ACL rules on a site with name, action, and enabled state. These are switching-level ACLs, separate from zone firewall policies.",
+        "List layer-2/switch ACL rules on a site with name, action, and enabled state. These are switching-level ACLs, separate from zone firewall policies. Filter example: \"action.eq('BLOCK')\".",
       inputSchema: {
         siteId: siteIdField,
+        filter: filterField,
         limit: limitField,
         offset: offsetField,
         response_format: responseFormatField,
       },
       annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     },
-    async ({ siteId, limit, offset, response_format }) =>
+    async ({ siteId, filter, limit, offset, response_format }) =>
       runListTool<AclRule>({
         client,
         siteId,
         limit,
         offset,
         format: response_format,
+        params: filter ? { filter } : undefined,
         path: (site) => `/v1/sites/${site}/acl-rules`,
         heading: "ACL rules",
         emptyMessage: "No ACL rules found on this site.",
@@ -250,28 +254,31 @@ export function registerFirewallTools(server: McpServer, client: UniFiClient): v
     "unifi_list_dns_policies",
     {
       title: "List DNS Policies",
-      description: "List DNS filtering/policy entries on a site (e.g. domain blocks) with name and enabled state.",
+      description:
+        "List custom local DNS records and forward-domain policies on a site — A/AAAA/CNAME/MX/SRV/TXT records and FORWARD_DOMAIN rules the gateway resolves locally. NOTE: this is local DNS record management, NOT DNS content filtering or domain blocking. Each entry has a domain, a record type, and enabled state. Filter example: \"domain.like('*.home.arpa')\".",
       inputSchema: {
         siteId: siteIdField,
+        filter: filterField,
         limit: limitField,
         offset: offsetField,
         response_format: responseFormatField,
       },
       annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     },
-    async ({ siteId, limit, offset, response_format }) =>
+    async ({ siteId, filter, limit, offset, response_format }) =>
       runListTool<DnsPolicy>({
         client,
         siteId,
         limit,
         offset,
         format: response_format,
+        params: filter ? { filter } : undefined,
         path: (site) => `/v1/sites/${site}/dns/policies`,
-        heading: "DNS policies",
-        emptyMessage: "No DNS policies found on this site.",
+        heading: "DNS records / policies",
+        emptyMessage: "No local DNS records or forward-domain policies configured on this site.",
         formatItem: (p) =>
           lines(
-            `- **${p.domain ?? p.name ?? "unnamed"}**${p.type ? ` (${p.type})` : ""}${p.enabled === false ? " (disabled)" : ""}`,
+            `- **${p.domain ?? "unnamed"}**${p.type ? ` (${p.type})` : ""}${p.enabled === false ? " (disabled)" : ""}`,
             line("  id", `\`${p.id}\``),
           ),
       }),
@@ -282,7 +289,7 @@ export function registerFirewallTools(server: McpServer, client: UniFiClient): v
     {
       title: "Get DNS Policy Details",
       description:
-        "Get one DNS filtering/policy entry by ID: domain, type, and enabled state. IDs come from unifi_list_dns_policies.",
+        "Get one local DNS record / forward-domain policy by ID: domain, record type (A/AAAA/CNAME/MX/SRV/TXT/FORWARD_DOMAIN), and enabled state. This is local DNS record management, not content filtering. IDs come from unifi_list_dns_policies.",
       inputSchema: {
         siteId: siteIdField,
         dnsPolicyId: uuidField("DNS policy ID (UUID from unifi_list_dns_policies)"),
@@ -297,7 +304,7 @@ export function registerFirewallTools(server: McpServer, client: UniFiClient): v
         if (response_format === ResponseFormat.JSON) return textResult(jsonBlock(p));
         return textResult(
           lines(
-            `## ${p.domain ?? p.name ?? "DNS policy"}${p.enabled === false ? " (disabled)" : ""}`,
+            `## ${p.domain ?? "DNS policy"}${p.enabled === false ? " (disabled)" : ""}`,
             line("ID", `\`${p.id}\``),
             line("Domain", p.domain),
             line("Type", p.type),

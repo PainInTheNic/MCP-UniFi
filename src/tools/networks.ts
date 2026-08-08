@@ -7,6 +7,7 @@ import { z } from "zod";
 import { UniFiClient } from "../unifi-client.js";
 import { ResponseFormat, jsonBlock, line, lines, textResult } from "../format.js";
 import {
+  filterField,
   guard,
   limitField,
   offsetField,
@@ -65,22 +66,24 @@ export function registerNetworkTools(server: McpServer, client: UniFiClient): vo
     {
       title: "List Networks (LANs/VLANs)",
       description:
-        "List the configured LAN networks/VLANs on a site with name, VLAN ID, management type, and enabled state. Use unifi_get_network for one network's full configuration including subnet and DHCP.",
+        "List the configured LAN networks/VLANs on a site with name, VLAN ID, management type, and enabled state. Use unifi_get_network for one network's full configuration including subnet and DHCP. Filter example: \"vlanId.eq(20)\".",
       inputSchema: {
         siteId: siteIdField,
+        filter: filterField,
         limit: limitField,
         offset: offsetField,
         response_format: responseFormatField,
       },
       annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     },
-    async ({ siteId, limit, offset, response_format }) =>
+    async ({ siteId, filter, limit, offset, response_format }) =>
       runListTool<Network>({
         client,
         siteId,
         limit,
         offset,
         format: response_format,
+        params: filter ? { filter } : undefined,
         path: (site) => `/v1/sites/${site}/networks`,
         heading: "Networks (LANs/VLANs)",
         emptyMessage: "No networks configured on this site.",

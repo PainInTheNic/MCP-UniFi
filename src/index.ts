@@ -26,10 +26,20 @@ async function main(): Promise<void> {
   const config = loadConfig();
   const client = new UniFiClient(config);
 
-  const server = new McpServer({
-    name: "unifi-mcp-server",
-    version: "1.0.0",
-  });
+  const server = new McpServer(
+    {
+      name: "unifi-mcp-server",
+      title: "UniFi Network",
+      version: "1.0.0",
+    },
+    {
+      instructions:
+        "Tools for managing a Ubiquiti UniFi network via the official Integration API. " +
+        "Start with unifi_list_sites to discover the site ID other tools accept (it is auto-detected when the console has one site). " +
+        "List tools support UniFi filter expressions like \"state.eq('OFFLINE')\" and 'response_format: json' for raw data. " +
+        "Tools annotated destructive (restart, unadopt, power-cycle, revoke access, delete) change live infrastructure — confirm with the user first.",
+    },
+  );
 
   registerSiteTools(server, client);
   registerDeviceTools(server, client);
@@ -49,6 +59,13 @@ async function main(): Promise<void> {
       "unifi-mcp-server WARNING: TLS certificate verification is DISABLED (UNIFI_TLS_VERIFY=false). " +
         "An on-path attacker could intercept the API key. Acceptable on a trusted LAN with a self-signed console cert; " +
         "install a proper certificate and remove the flag to close this gap.",
+    );
+  }
+  if (/^http:\/\//i.test(config.baseUrl)) {
+    console.error(
+      "unifi-mcp-server WARNING: UNIFI_BASE_URL uses http:// — the API key is sent in cleartext and can be read by anyone " +
+        "on the network path. UniFi consoles serve HTTPS by default; use an https:// URL (with UNIFI_TLS_VERIFY=false if the " +
+        "cert is self-signed) instead.",
     );
   }
 }

@@ -40,7 +40,7 @@ export function textResult(text: string, structured?: Record<string, unknown>): 
   const truncated =
     text.length > CHARACTER_LIMIT
       ? text.slice(0, CHARACTER_LIMIT) +
-        `\n\n[Response truncated at ${CHARACTER_LIMIT} characters. Use a smaller 'limit', an 'offset', or a filter to narrow results.]`
+        `\n\n[Response truncated at ${CHARACTER_LIMIT} characters; any JSON above may be incomplete. On list tools, narrow the result with a smaller 'limit'/'offset' or a 'filter'; on single-item tools, the object itself is simply large.]`
       : text;
   const result: CallToolResult = { content: [{ type: "text", text: truncated }] };
   if (structured !== undefined) result.structuredContent = structured;
