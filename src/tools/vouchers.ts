@@ -12,6 +12,7 @@ import {
   limitField,
   offsetField,
   responseFormatField,
+  runDelete,
   runListTool,
   siteIdField,
   uuidField,
@@ -150,6 +151,31 @@ export function registerVoucherTools(server: McpServer, client: UniFiClient): vo
         const site = await client.resolveSiteId(siteId);
         await client.delete(`/v1/sites/${site}/hotspot/vouchers/${voucherId}`);
         return textResult(`Voucher ${voucherId} deleted.`);
+      }),
+  );
+
+  server.registerTool(
+    "unifi_delete_vouchers",
+    {
+      title: "Delete Hotspot Vouchers (bulk)",
+      description:
+        "Delete every hotspot voucher matching a filter, in one call. A filter is REQUIRED so this can't wipe all vouchers by accident — e.g. \"expired.eq(true)\" to clear expired ones, or \"name.eq('Weekend guests')\" for a batch. CAUTION: irreversible; confirm with the user. To delete a single voucher by ID, use unifi_delete_voucher instead.",
+      inputSchema: {
+        siteId: siteIdField,
+        filter: z
+          .string()
+          .min(1)
+          .describe("UniFi filter selecting which vouchers to delete, e.g. \"expired.eq(true)\". Required."),
+      },
+      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true },
+    },
+    async ({ siteId, filter }) =>
+      runDelete({
+        client,
+        siteId,
+        path: (s) => `/v1/sites/${s}/hotspot/vouchers`,
+        label: "matching vouchers",
+        params: { filter },
       }),
   );
 }

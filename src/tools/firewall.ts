@@ -7,14 +7,18 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { UniFiClient } from "../unifi-client.js";
-import { ResponseFormat, jsonBlock, line, lines, textResult } from "../format.js";
+import { ResponseFormat, jsonBlock, jsonResult, line, lines, textResult } from "../format.js";
 import {
+  configField,
   filterField,
   guard,
   limitField,
   offsetField,
   responseFormatField,
+  runCreate,
+  runDelete,
   runListTool,
+  runUpdate,
   siteIdField,
   uuidField,
 } from "./shared.js";
@@ -320,7 +324,7 @@ export function registerFirewallTools(server: McpServer, client: UniFiClient): v
     {
       title: "List Traffic Matching Lists",
       description:
-        "List reusable traffic-matching lists on a site — named IP/domain/region lists that firewall policies and other rules reference instead of inlining addresses. Use unifi_get_traffic_matching_list for one list's entries.",
+        "List reusable traffic-matching lists on a site — named IP-address or port lists (type IPV4_ADDRESSES / IPV6_ADDRESSES / PORTS) that firewall policies reference instead of inlining addresses. Use unifi_get_traffic_matching_list for one list's entries.",
       inputSchema: {
         siteId: siteIdField,
         filter: filterField,
@@ -369,6 +373,444 @@ export function registerFirewallTools(server: McpServer, client: UniFiClient): v
         );
         // Entry contents vary by list type — raw JSON is the honest representation.
         return textResult(jsonBlock(t));
+      }),
+  );
+
+  // ---- Firewall policies: create / update / delete / reorder ----
+  server.registerTool(
+    "unifi_create_firewall_policy",
+    {
+      title: "Create Firewall Policy",
+      description:
+        "Create a zone-based firewall policy. 'config' is the full policy object; required: name, enabled, action (ALLOW/BLOCK/REJECT), source, destination, ipProtocolScope, loggingEnabled. Model it on an existing policy fetched via unifi_get_firewall_policy. CAUTION: a new ALLOW/BLOCK policy changes live traffic filtering — confirm with the user.",
+      inputSchema: {
+        siteId: siteIdField,
+        config: configField(
+          "Full firewall policy object. Required: name, enabled, action, source, destination, ipProtocolScope, loggingEnabled. See unifi_get_firewall_policy for the shape.",
+        ),
+      },
+      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
+    },
+    async ({ siteId, config }) =>
+      runCreate<FirewallPolicy>({
+        client,
+        siteId,
+        path: (s) => `/v1/sites/${s}/firewall/policies`,
+        body: config,
+        label: "firewall policy",
+      }),
+  );
+
+  server.registerTool(
+    "unifi_update_firewall_policy",
+    {
+      title: "Update Firewall Policy",
+      description:
+        "Replace a user-defined firewall policy (full PUT). Fetch the current object with unifi_get_firewall_policy, modify it, and pass it as 'config' (system-defined policies cannot be edited). CAUTION: this changes live traffic filtering — confirm with the user and double-check WHICH policy. For a simple enable/disable use unifi_set_firewall_policy_enabled instead. IDs come from unifi_list_firewall_policies.",
+      inputSchema: {
+        siteId: siteIdField,
+        policyId: uuidField("Firewall policy ID (UUID from unifi_list_firewall_policies)"),
+        config: configField("Full firewall policy object to write (fetch current via unifi_get_firewall_policy, then modify)."),
+      },
+      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true },
+    },
+    async ({ siteId, policyId, config }) =>
+      runUpdate<FirewallPolicy>({
+        client,
+        siteId,
+        path: (s) => `/v1/sites/${s}/firewall/policies/${policyId}`,
+        body: config,
+        label: `firewall policy ${policyId}`,
+      }),
+  );
+
+  server.registerTool(
+    "unifi_delete_firewall_policy",
+    {
+      title: "Delete Firewall Policy",
+      description:
+        "Delete a user-defined firewall policy. CAUTION: irreversible and changes live traffic filtering — confirm with the user and verify the policy with unifi_get_firewall_policy first. System-defined policies cannot be deleted. IDs come from unifi_list_firewall_policies.",
+      inputSchema: {
+        siteId: siteIdField,
+        policyId: uuidField("Firewall policy ID (UUID from unifi_list_firewall_policies)"),
+      },
+      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true },
+    },
+    async ({ siteId, policyId }) =>
+      runDelete({
+        client,
+        siteId,
+        path: (s) => `/v1/sites/${s}/firewall/policies/${policyId}`,
+        label: `firewall policy ${policyId}`,
+      }),
+  );
+
+  server.registerTool(
+    "unifi_get_firewall_policy_ordering",
+    {
+      title: "Get Firewall Policy Ordering",
+      description:
+        "Get the current evaluation order of user-defined firewall policies for one source→destination zone pair — the policy IDs split into those evaluated before and after the system-defined policies. Use this before unifi_reorder_firewall_policies. Zone IDs come from unifi_list_firewall_zones.",
+      inputSchema: {
+        siteId: siteIdField,
+        sourceFirewallZoneId: uuidField("Source firewall zone ID (from unifi_list_firewall_zones)"),
+        destinationFirewallZoneId: uuidField("Destination firewall zone ID (from unifi_list_firewall_zones)"),
+      },
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+    },
+    async ({ siteId, sourceFirewallZoneId, destinationFirewallZoneId }) =>
+      guard(async () => {
+        const site = await client.resolveSiteId(siteId);
+        const ordering = await client.get(`/v1/sites/${site}/firewall/policies/ordering`, {
+          sourceFirewallZoneId,
+          destinationFirewallZoneId,
+        });
+        return jsonResult("", ordering);
+      }),
+  );
+
+  server.registerTool(
+    "unifi_reorder_firewall_policies",
+    {
+      title: "Reorder Firewall Policies",
+      description:
+        "Set the evaluation order of user-defined firewall policies for one source→destination zone pair. The API splits user policies into those evaluated BEFORE the zone's system-defined policies and those AFTER, so pass two ordered lists. Use unifi_get_firewall_policy_ordering (or model on the current order) to see the existing split. CAUTION: order determines which rule wins — reordering changes what traffic is allowed/blocked; confirm with the user. Zone IDs come from unifi_list_firewall_zones; policy IDs from unifi_list_firewall_policies.",
+      inputSchema: {
+        siteId: siteIdField,
+        sourceFirewallZoneId: uuidField("Source firewall zone ID (from unifi_list_firewall_zones)"),
+        destinationFirewallZoneId: uuidField("Destination firewall zone ID (from unifi_list_firewall_zones)"),
+        beforeSystemDefined: z
+          .array(z.string().uuid())
+          .describe("User-defined policy IDs evaluated BEFORE the system-defined policies for this zone pair, in order"),
+        afterSystemDefined: z
+          .array(z.string().uuid())
+          .describe("User-defined policy IDs evaluated AFTER the system-defined policies for this zone pair, in order"),
+      },
+      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true },
+    },
+    async ({ siteId, sourceFirewallZoneId, destinationFirewallZoneId, beforeSystemDefined, afterSystemDefined }) =>
+      guard(async () => {
+        const site = await client.resolveSiteId(siteId);
+        const q = new URLSearchParams({ sourceFirewallZoneId, destinationFirewallZoneId }).toString();
+        await client.put(`/v1/sites/${site}/firewall/policies/ordering?${q}`, {
+          orderedFirewallPolicyIds: { beforeSystemDefined, afterSystemDefined },
+        });
+        return textResult(
+          `Reordered firewall policies for the given zone pair (${beforeSystemDefined.length} before, ${afterSystemDefined.length} after the system-defined policies).`,
+        );
+      }),
+  );
+
+  // ---- Firewall zones: create / update / delete (custom zones only) ----
+  server.registerTool(
+    "unifi_create_firewall_zone",
+    {
+      title: "Create Custom Firewall Zone",
+      description:
+        "Create a custom firewall zone grouping one or more networks. 'config' requires name (string) and networkIds (array of network UUIDs from unifi_list_networks). Returns the created zone.",
+      inputSchema: {
+        siteId: siteIdField,
+        config: configField("Zone object. Required: name (string), networkIds (array of network UUIDs)."),
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+    },
+    async ({ siteId, config }) =>
+      runCreate<FirewallZone>({
+        client,
+        siteId,
+        path: (s) => `/v1/sites/${s}/firewall/zones`,
+        body: config,
+        label: "firewall zone",
+      }),
+  );
+
+  server.registerTool(
+    "unifi_update_firewall_zone",
+    {
+      title: "Update Firewall Zone",
+      description:
+        "Replace a firewall zone (full PUT) — e.g. change which networks belong to it. Fetch the current zone via unifi_list_firewall_zones, modify, and pass as 'config'. CAUTION: moving networks between zones changes which firewall policies apply to them; confirm with the user. IDs come from unifi_list_firewall_zones.",
+      inputSchema: {
+        siteId: siteIdField,
+        zoneId: uuidField("Firewall zone ID (UUID from unifi_list_firewall_zones)"),
+        config: configField("Full zone object to write. Typically name + networkIds."),
+      },
+      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true },
+    },
+    async ({ siteId, zoneId, config }) =>
+      runUpdate<FirewallZone>({
+        client,
+        siteId,
+        path: (s) => `/v1/sites/${s}/firewall/zones/${zoneId}`,
+        body: config,
+        label: `firewall zone ${zoneId}`,
+      }),
+  );
+
+  server.registerTool(
+    "unifi_delete_firewall_zone",
+    {
+      title: "Delete Custom Firewall Zone",
+      description:
+        "Delete a custom firewall zone. Only custom (user-defined) zones can be deleted — system zones cannot. CAUTION: irreversible; policies referencing this zone may be affected. Confirm with the user. IDs come from unifi_list_firewall_zones.",
+      inputSchema: {
+        siteId: siteIdField,
+        zoneId: uuidField("Firewall zone ID (UUID from unifi_list_firewall_zones)"),
+      },
+      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true },
+    },
+    async ({ siteId, zoneId }) =>
+      runDelete({
+        client,
+        siteId,
+        path: (s) => `/v1/sites/${s}/firewall/zones/${zoneId}`,
+        label: `firewall zone ${zoneId}`,
+      }),
+  );
+
+  // ---- ACL rules: create / update / delete / reorder ----
+  server.registerTool(
+    "unifi_create_acl_rule",
+    {
+      title: "Create ACL Rule",
+      description:
+        "Create a layer-2/switch ACL rule. 'config' requires action (ALLOW/BLOCK), enabled, name, type; plus sourceFilter/destinationFilter/enforcingDeviceFilter as needed. Model it on an existing rule fetched via unifi_get_acl_rule. CAUTION: changes switching-level access; confirm with the user.",
+      inputSchema: {
+        siteId: siteIdField,
+        config: configField(
+          "Full ACL rule object. Required: action, enabled, name, type. See unifi_get_acl_rule for the filter shapes.",
+        ),
+      },
+      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
+    },
+    async ({ siteId, config }) =>
+      runCreate<AclRule>({
+        client,
+        siteId,
+        path: (s) => `/v1/sites/${s}/acl-rules`,
+        body: config,
+        label: "ACL rule",
+      }),
+  );
+
+  server.registerTool(
+    "unifi_update_acl_rule",
+    {
+      title: "Update ACL Rule",
+      description:
+        "Replace an ACL rule (full PUT). Fetch the current rule via unifi_get_acl_rule, modify, and pass as 'config'. CAUTION: changes switching-level access; confirm with the user. IDs come from unifi_list_acl_rules.",
+      inputSchema: {
+        siteId: siteIdField,
+        aclRuleId: uuidField("ACL rule ID (UUID from unifi_list_acl_rules)"),
+        config: configField("Full ACL rule object to write (fetch current via unifi_get_acl_rule, then modify)."),
+      },
+      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true },
+    },
+    async ({ siteId, aclRuleId, config }) =>
+      runUpdate<AclRule>({
+        client,
+        siteId,
+        path: (s) => `/v1/sites/${s}/acl-rules/${aclRuleId}`,
+        body: config,
+        label: `ACL rule ${aclRuleId}`,
+      }),
+  );
+
+  server.registerTool(
+    "unifi_delete_acl_rule",
+    {
+      title: "Delete ACL Rule",
+      description:
+        "Delete an ACL rule. CAUTION: irreversible and changes switching-level access; confirm with the user. IDs come from unifi_list_acl_rules.",
+      inputSchema: {
+        siteId: siteIdField,
+        aclRuleId: uuidField("ACL rule ID (UUID from unifi_list_acl_rules)"),
+      },
+      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true },
+    },
+    async ({ siteId, aclRuleId }) =>
+      runDelete({
+        client,
+        siteId,
+        path: (s) => `/v1/sites/${s}/acl-rules/${aclRuleId}`,
+        label: `ACL rule ${aclRuleId}`,
+      }),
+  );
+
+  server.registerTool(
+    "unifi_get_acl_rule_ordering",
+    {
+      title: "Get ACL Rule Ordering",
+      description:
+        "Get the current evaluation order of user-defined ACL rules (an ordered list of rule IDs). Use this before unifi_reorder_acl_rules.",
+      inputSchema: {
+        siteId: siteIdField,
+      },
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+    },
+    async ({ siteId }) =>
+      guard(async () => {
+        const site = await client.resolveSiteId(siteId);
+        const ordering = await client.get(`/v1/sites/${site}/acl-rules/ordering`);
+        return jsonResult("", ordering);
+      }),
+  );
+
+  server.registerTool(
+    "unifi_reorder_acl_rules",
+    {
+      title: "Reorder ACL Rules",
+      description:
+        "Set the evaluation order of user-defined ACL rules. Pass every user-defined ACL rule ID in the desired order (see unifi_get_acl_rule_ordering for the current order). CAUTION: order determines which rule wins; confirm with the user. IDs come from unifi_list_acl_rules.",
+      inputSchema: {
+        siteId: siteIdField,
+        orderedAclRuleIds: z
+          .array(z.string().uuid())
+          .describe("User-defined ACL rule IDs in the desired evaluation order"),
+      },
+      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true },
+    },
+    async ({ siteId, orderedAclRuleIds }) =>
+      guard(async () => {
+        const site = await client.resolveSiteId(siteId);
+        await client.put(`/v1/sites/${site}/acl-rules/ordering`, { orderedAclRuleIds });
+        return textResult(`Reordered ${orderedAclRuleIds.length} ACL rule(s).`);
+      }),
+  );
+
+  // ---- DNS records / policies: create / update / delete ----
+  server.registerTool(
+    "unifi_create_dns_policy",
+    {
+      title: "Create DNS Record / Policy",
+      description:
+        "Create a local DNS record or forward-domain policy. 'config' requires type (A_RECORD/AAAA_RECORD/CNAME_RECORD/MX_RECORD/SRV_RECORD/TXT_RECORD/FORWARD_DOMAIN) and enabled, plus the type-specific fields (e.g. domain + ipv4Address + ttlSeconds for A_RECORD; domain + ipAddress for FORWARD_DOMAIN). This is local DNS record management, NOT domain blocking. Easiest: model it on an existing entry fetched via unifi_get_dns_policy (responseFormat='json').",
+      inputSchema: {
+        siteId: siteIdField,
+        config: configField(
+          "Full DNS record/policy object. Required: type, enabled, plus type-specific fields (domain, ipv4Address, etc.). See unifi_get_dns_policy.",
+        ),
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+    },
+    async ({ siteId, config }) =>
+      runCreate<DnsPolicy>({
+        client,
+        siteId,
+        path: (s) => `/v1/sites/${s}/dns/policies`,
+        body: config,
+        label: "DNS record/policy",
+      }),
+  );
+
+  server.registerTool(
+    "unifi_update_dns_policy",
+    {
+      title: "Update DNS Record / Policy",
+      description:
+        "Replace a local DNS record / forward-domain policy (full PUT). Fetch the current object via unifi_get_dns_policy, modify, and pass as 'config'. IDs come from unifi_list_dns_policies.",
+      inputSchema: {
+        siteId: siteIdField,
+        dnsPolicyId: uuidField("DNS policy ID (UUID from unifi_list_dns_policies)"),
+        config: configField("Full DNS record/policy object to write (fetch current via unifi_get_dns_policy, then modify)."),
+      },
+      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true },
+    },
+    async ({ siteId, dnsPolicyId, config }) =>
+      runUpdate<DnsPolicy>({
+        client,
+        siteId,
+        path: (s) => `/v1/sites/${s}/dns/policies/${dnsPolicyId}`,
+        body: config,
+        label: `DNS record/policy ${dnsPolicyId}`,
+      }),
+  );
+
+  server.registerTool(
+    "unifi_delete_dns_policy",
+    {
+      title: "Delete DNS Record / Policy",
+      description:
+        "Delete a local DNS record / forward-domain policy. CAUTION: irreversible; confirm with the user. IDs come from unifi_list_dns_policies.",
+      inputSchema: {
+        siteId: siteIdField,
+        dnsPolicyId: uuidField("DNS policy ID (UUID from unifi_list_dns_policies)"),
+      },
+      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true },
+    },
+    async ({ siteId, dnsPolicyId }) =>
+      runDelete({
+        client,
+        siteId,
+        path: (s) => `/v1/sites/${s}/dns/policies/${dnsPolicyId}`,
+        label: `DNS record/policy ${dnsPolicyId}`,
+      }),
+  );
+
+  // ---- Traffic matching lists: create / update / delete ----
+  server.registerTool(
+    "unifi_create_traffic_matching_list",
+    {
+      title: "Create Traffic Matching List",
+      description:
+        "Create a reusable traffic-matching list (named IP-address or port list referenced by firewall policies). 'config' requires name and type (IPV4_ADDRESSES / IPV6_ADDRESSES / PORTS), plus the list entries. Model it on an existing list via unifi_get_traffic_matching_list.",
+      inputSchema: {
+        siteId: siteIdField,
+        config: configField("Full traffic-matching-list object. Required: name, type, plus entries. See unifi_get_traffic_matching_list."),
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+    },
+    async ({ siteId, config }) =>
+      runCreate<TrafficMatchingList>({
+        client,
+        siteId,
+        path: (s) => `/v1/sites/${s}/traffic-matching-lists`,
+        body: config,
+        label: "traffic matching list",
+      }),
+  );
+
+  server.registerTool(
+    "unifi_update_traffic_matching_list",
+    {
+      title: "Update Traffic Matching List",
+      description:
+        "Replace a traffic-matching list (full PUT). Fetch the current list via unifi_get_traffic_matching_list, modify, and pass as 'config'. CAUTION: firewall policies referencing this list will use the new entries; confirm with the user. IDs come from unifi_list_traffic_matching_lists.",
+      inputSchema: {
+        siteId: siteIdField,
+        trafficMatchingListId: uuidField("Traffic matching list ID (UUID from unifi_list_traffic_matching_lists)"),
+        config: configField("Full traffic-matching-list object to write (fetch current first, then modify)."),
+      },
+      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true },
+    },
+    async ({ siteId, trafficMatchingListId, config }) =>
+      runUpdate<TrafficMatchingList>({
+        client,
+        siteId,
+        path: (s) => `/v1/sites/${s}/traffic-matching-lists/${trafficMatchingListId}`,
+        body: config,
+        label: `traffic matching list ${trafficMatchingListId}`,
+      }),
+  );
+
+  server.registerTool(
+    "unifi_delete_traffic_matching_list",
+    {
+      title: "Delete Traffic Matching List",
+      description:
+        "Delete a traffic-matching list. CAUTION: irreversible; firewall policies referencing it may break. Confirm with the user. IDs come from unifi_list_traffic_matching_lists.",
+      inputSchema: {
+        siteId: siteIdField,
+        trafficMatchingListId: uuidField("Traffic matching list ID (UUID from unifi_list_traffic_matching_lists)"),
+      },
+      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true },
+    },
+    async ({ siteId, trafficMatchingListId }) =>
+      runDelete({
+        client,
+        siteId,
+        path: (s) => `/v1/sites/${s}/traffic-matching-lists/${trafficMatchingListId}`,
+        label: `traffic matching list ${trafficMatchingListId}`,
       }),
   );
 }

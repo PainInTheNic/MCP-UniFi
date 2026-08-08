@@ -7,12 +7,16 @@ import { z } from "zod";
 import { UniFiClient } from "../unifi-client.js";
 import { ResponseFormat, jsonBlock, line, lines, textResult } from "../format.js";
 import {
+  configField,
   filterField,
   guard,
   limitField,
   offsetField,
   responseFormatField,
+  runCreate,
+  runDelete,
   runListTool,
+  runUpdate,
   siteIdField,
   uuidField,
 } from "./shared.js";
@@ -239,6 +243,73 @@ export function registerNetworkTools(server: McpServer, client: UniFiClient): vo
             line("  id", `\`${v.id}\``),
             line("  type", v.type),
           ),
+      }),
+  );
+
+  server.registerTool(
+    "unifi_create_network",
+    {
+      title: "Create Network (LAN/VLAN)",
+      description:
+        "Create a new LAN network / VLAN on a site. 'config' is the full network object; required for all: name (string), vlanId (integer), management (string), enabled (boolean). For GATEWAY/SWITCH-managed networks (management != \"UNMANAGED\"), ipv4Configuration (subnet + DHCP) is ALSO required — plus, for GATEWAY, isolationEnabled, internetAccessEnabled, and cellularBackupEnabled. Easiest: model it on an existing network fetched via unifi_get_network with responseFormat='json', changing name/vlanId/subnet. Returns the created network.",
+      inputSchema: {
+        siteId: siteIdField,
+        config: configField(
+          "Full network object. Required: name, vlanId, management, enabled (+ ipv4Configuration and, for GATEWAY, isolationEnabled/internetAccessEnabled/cellularBackupEnabled). See unifi_get_network (json) for the full shape.",
+        ),
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+    },
+    async ({ siteId, config }) =>
+      runCreate<Network>({ client, siteId, path: (s) => `/v1/sites/${s}/networks`, body: config, label: "network" }),
+  );
+
+  server.registerTool(
+    "unifi_update_network",
+    {
+      title: "Update Network (LAN/VLAN)",
+      description:
+        "Replace the configuration of an existing LAN network / VLAN (full PUT). Fetch the current object with unifi_get_network (responseFormat='json'), change what you need, and pass the whole object as 'config'. CAUTION: changing subnet/VLAN/DHCP can disconnect every client on this network — confirm with the user first. IDs come from unifi_list_networks.",
+      inputSchema: {
+        siteId: siteIdField,
+        networkId: uuidField("Network ID (UUID from unifi_list_networks)"),
+        config: configField("Full network object to write (fetch current via unifi_get_network, then modify)."),
+      },
+      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true },
+    },
+    async ({ siteId, networkId, config }) =>
+      runUpdate<Network>({
+        client,
+        siteId,
+        path: (s) => `/v1/sites/${s}/networks/${networkId}`,
+        body: config,
+        label: `network ${networkId}`,
+      }),
+  );
+
+  server.registerTool(
+    "unifi_delete_network",
+    {
+      title: "Delete Network (LAN/VLAN)",
+      description:
+        "Delete a LAN network / VLAN. CAUTION: irreversible — clients on it lose their network and dependent WiFi/firewall/routes may break. Check unifi_get_network_references first and confirm with the user. Set force=true to delete even while other resources still reference it. IDs come from unifi_list_networks.",
+      inputSchema: {
+        siteId: siteIdField,
+        networkId: uuidField("Network ID (UUID from unifi_list_networks)"),
+        force: z
+          .boolean()
+          .default(false)
+          .describe("Delete even if other resources still reference this network (default false)"),
+      },
+      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true },
+    },
+    async ({ siteId, networkId, force }) =>
+      runDelete({
+        client,
+        siteId,
+        path: (s) => `/v1/sites/${s}/networks/${networkId}`,
+        label: `network ${networkId}`,
+        params: { force },
       }),
   );
 }

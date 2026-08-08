@@ -7,11 +7,15 @@ import { z } from "zod";
 import { UniFiClient } from "../unifi-client.js";
 import { ResponseFormat, jsonBlock, line, lines, textResult } from "../format.js";
 import {
+  configField,
   guard,
   limitField,
   offsetField,
   responseFormatField,
+  runCreate,
+  runDelete,
   runListTool,
+  runUpdate,
   siteIdField,
   uuidField,
 } from "./shared.js";
@@ -97,6 +101,79 @@ export function registerWifiTools(server: McpServer, client: UniFiClient): void 
             ),
           ) + "\n\nUse responseFormat='json' for the complete configuration.",
         );
+      }),
+  );
+
+  server.registerTool(
+    "unifi_create_wifi",
+    {
+      title: "Create WiFi Network (SSID)",
+      description:
+        "Create a new WiFi network (SSID / broadcast). 'config' is the full broadcast object. Because the required fields vary by type (a STANDARD SSID additionally needs advertiseDeviceName, arpProxyEnabled, broadcastingFrequenciesGHz, and bssTransitionEnabled on top of the base name, enabled, type, securityConfiguration, network, hideName, clientIsolationEnabled, uapsdEnabled, channel2gLockedTo6, dtimPeriod2gLockedTo3, multicastToUnicastConversionEnabled), the reliable path is to fetch an existing SSID with unifi_get_wifi (responseFormat='json'), copy its shape, and change name/network. Note the passphrase is redacted in reads, so set a real passphrase in securityConfiguration. Returns the created SSID.",
+      inputSchema: {
+        siteId: siteIdField,
+        config: configField(
+          "Full WiFi broadcast object. Required: name, enabled, type, securityConfiguration, network, and the radio booleans. See unifi_get_wifi (json) for the shape.",
+        ),
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+    },
+    async ({ siteId, config }) =>
+      runCreate<WifiBroadcast>({
+        client,
+        siteId,
+        path: (s) => `/v1/sites/${s}/wifi/broadcasts`,
+        body: config,
+        label: "WiFi network",
+      }),
+  );
+
+  server.registerTool(
+    "unifi_update_wifi",
+    {
+      title: "Update WiFi Network (SSID)",
+      description:
+        "Replace the configuration of an existing WiFi SSID (full PUT). Fetch the current object with unifi_get_wifi (responseFormat='json'), modify it, and pass the whole object as 'config'. NOTE: the passphrase is redacted in reads, so include a real passphrase in config or the security config will be rejected. CAUTION: reconfiguring an SSID disconnects its connected clients — confirm with the user. IDs come from unifi_list_wifi.",
+      inputSchema: {
+        siteId: siteIdField,
+        wifiId: uuidField("WiFi broadcast ID (UUID from unifi_list_wifi)"),
+        config: configField("Full WiFi broadcast object to write (fetch current via unifi_get_wifi, then modify)."),
+      },
+      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true },
+    },
+    async ({ siteId, wifiId, config }) =>
+      runUpdate<WifiBroadcast>({
+        client,
+        siteId,
+        path: (s) => `/v1/sites/${s}/wifi/broadcasts/${wifiId}`,
+        body: config,
+        label: `WiFi network ${wifiId}`,
+      }),
+  );
+
+  server.registerTool(
+    "unifi_delete_wifi",
+    {
+      title: "Delete WiFi Network (SSID)",
+      description:
+        "Delete a WiFi SSID. CAUTION: irreversible — connected clients lose this network. Confirm with the user. Set force=true to delete even if other resources reference it. IDs come from unifi_list_wifi.",
+      inputSchema: {
+        siteId: siteIdField,
+        wifiId: uuidField("WiFi broadcast ID (UUID from unifi_list_wifi)"),
+        force: z
+          .boolean()
+          .default(false)
+          .describe("Delete even if other resources still reference this SSID (default false)"),
+      },
+      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true },
+    },
+    async ({ siteId, wifiId, force }) =>
+      runDelete({
+        client,
+        siteId,
+        path: (s) => `/v1/sites/${s}/wifi/broadcasts/${wifiId}`,
+        label: `WiFi network ${wifiId}`,
+        params: { force },
       }),
   );
 }

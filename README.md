@@ -2,8 +2,9 @@
 
 An MCP (Model Context Protocol) server that lets Claude manage your Ubiquiti
 UniFi network through the **official UniFi Network API** — list devices and
-clients, check health stats, inspect networks/WiFi/firewall config, restart
-devices, power-cycle PoE ports, manage guest access and hotspot vouchers.
+clients, check health stats, inspect and **edit** networks / WiFi / firewall /
+ACL / DNS config, adopt or restart devices, power-cycle PoE ports, and manage
+guest access and hotspot vouchers.
 
 ## How it works
 
@@ -86,26 +87,61 @@ Verify with `claude mcp list`, then just ask Claude things like:
 | `UNIFI_TLS_VERIFY` | no | `true` | TLS cert validation (secure by default). Set `false` only for self-signed console certs on a trusted LAN — it allows on-path interception of the API key. |
 | `UNIFI_API_PATH` | no | `/proxy/network/integration` | Path prefix override (rarely needed) |
 
-## Tools (28)
+## Tools (70)
 
-**Read-only (21)** — safe, no side effects:
-`unifi_get_application_info`, `unifi_list_sites`, `unifi_list_devices`,
-`unifi_get_device`, `unifi_get_device_statistics`, `unifi_list_pending_devices`,
-`unifi_list_clients`, `unifi_get_client`, `unifi_list_networks`,
-`unifi_get_network`, `unifi_list_wans`, `unifi_list_vpn`, `unifi_list_wifi`,
-`unifi_get_wifi`, `unifi_list_firewall_policies`, `unifi_get_firewall_policy`,
-`unifi_list_firewall_zones`, `unifi_list_acl_rules`, `unifi_list_dns_policies`,
-`unifi_list_vouchers`
+**Read-only (37)** — safe, no side effects:
 
-**Actions (7)** — change things; Claude Code prompts for permission, and the
-risky ones are annotated `destructiveHint` so clients can warn:
-`unifi_adopt_device`, `unifi_restart_device` ⚠, `unifi_power_cycle_port` ⚠,
-`unifi_authorize_guest_access`, `unifi_unauthorize_guest_access` ⚠,
-`unifi_generate_vouchers`, `unifi_delete_voucher` ⚠,
-`unifi_set_firewall_policy_enabled` ⚠
+- *Discovery*: `unifi_get_application_info`, `unifi_list_sites`
+- *Devices*: `unifi_list_devices`, `unifi_get_device`,
+  `unifi_get_device_statistics`, `unifi_list_pending_devices`
+- *Clients*: `unifi_list_clients`, `unifi_get_client`
+- *Networks / topology*: `unifi_list_networks`, `unifi_get_network`,
+  `unifi_get_network_references`, `unifi_list_wans`, `unifi_list_vpn`
+- *WiFi*: `unifi_list_wifi`, `unifi_get_wifi`
+- *Firewall / security*: `unifi_list_firewall_policies`,
+  `unifi_get_firewall_policy`, `unifi_list_firewall_zones`,
+  `unifi_list_acl_rules`, `unifi_get_acl_rule`, `unifi_list_dns_policies`,
+  `unifi_get_dns_policy`, `unifi_list_traffic_matching_lists`,
+  `unifi_get_traffic_matching_list`
+- *Switching*: `unifi_list_lags`, `unifi_get_lag`, `unifi_list_mclag_domains`,
+  `unifi_get_mclag_domain`, `unifi_list_switch_stacks`, `unifi_get_switch_stack`
+- *Reference data*: `unifi_list_countries`, `unifi_list_dpi_applications`,
+  `unifi_list_dpi_categories`, `unifi_list_device_tags`,
+  `unifi_list_radius_profiles`
+- *Vouchers*: `unifi_list_vouchers`, `unifi_get_voucher`
 
-List tools support `limit`/`offset` pagination and UniFi filter expressions,
-e.g. `state.eq('OFFLINE')`, `access.type.eq('GUEST')`, `name.like('Office*')`.
+**Write (33)** — change things; Claude Code prompts for permission, and the
+ones that can disrupt the network are annotated `destructiveHint` (⚠) so
+clients warn first:
+
+- *Devices*: `unifi_adopt_device`, `unifi_unadopt_device` ⚠,
+  `unifi_restart_device` ⚠, `unifi_power_cycle_port` ⚠
+- *Guest access*: `unifi_authorize_guest_access`,
+  `unifi_unauthorize_guest_access` ⚠
+- *Networks*: `unifi_create_network`, `unifi_update_network` ⚠,
+  `unifi_delete_network` ⚠
+- *WiFi*: `unifi_create_wifi`, `unifi_update_wifi` ⚠, `unifi_delete_wifi` ⚠
+- *Firewall policies*: `unifi_set_firewall_policy_enabled` ⚠,
+  `unifi_create_firewall_policy` ⚠, `unifi_update_firewall_policy` ⚠,
+  `unifi_delete_firewall_policy` ⚠, `unifi_reorder_firewall_policies` ⚠
+- *Firewall zones*: `unifi_create_firewall_zone`,
+  `unifi_update_firewall_zone` ⚠, `unifi_delete_firewall_zone` ⚠
+- *ACL rules*: `unifi_create_acl_rule` ⚠, `unifi_update_acl_rule` ⚠,
+  `unifi_delete_acl_rule` ⚠, `unifi_reorder_acl_rules` ⚠
+- *DNS records*: `unifi_create_dns_policy`, `unifi_update_dns_policy` ⚠,
+  `unifi_delete_dns_policy` ⚠
+- *Traffic-matching lists*: `unifi_create_traffic_matching_list`,
+  `unifi_update_traffic_matching_list` ⚠, `unifi_delete_traffic_matching_list` ⚠
+- *Vouchers*: `unifi_generate_vouchers`, `unifi_delete_voucher` ⚠,
+  `unifi_delete_vouchers` ⚠ (bulk, filter required)
+
+**Editing config**: `create_*` tools take a `config` object (the full
+resource); `update_*` tools do a full replacement — fetch the current object
+with the matching `get_*` tool using `responseFormat: 'json'`, change what you
+need, and pass it back. List tools support `limit`/`offset` pagination and
+UniFi filter expressions, e.g. `state.eq('OFFLINE')`,
+`access.type.eq('GUEST')`, `name.like('Office*')`. Every tool also accepts
+`responseFormat: 'json'` for the raw API object.
 
 ## Security notes
 
