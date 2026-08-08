@@ -51,3 +51,12 @@ export function loadConfig(): UniFiConfig {
     apiPath: process.env.UNIFI_API_PATH?.trim().replace(/\/+$/, "") || "/proxy/network/integration",
   };
 }
+
+/**
+ * Strip any userinfo (user:pass@) from a URL before it is shown in logs or
+ * error text, so embedded credentials never surface. UniFi uses header auth so
+ * this is defensive, but cheap.
+ */
+export function redactUrl(url: string): string {
+  return url.replace(/\/\/[^/@]*@/, "//");
+}

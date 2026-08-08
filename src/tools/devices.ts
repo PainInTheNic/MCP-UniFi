@@ -90,17 +90,17 @@ export function registerDeviceTools(server: McpServer, client: UniFiClient): voi
         filter: filterField,
         limit: limitField,
         offset: offsetField,
-        response_format: responseFormatField,
+        responseFormat: responseFormatField,
       },
       annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     },
-    async ({ siteId, filter, limit, offset, response_format }) =>
+    async ({ siteId, filter, limit, offset, responseFormat }) =>
       runListTool<DeviceSummary>({
         client,
         siteId,
         limit,
         offset,
-        format: response_format,
+        format: responseFormat,
         params: filter ? { filter } : undefined,
         path: (site) => `/v1/sites/${site}/devices`,
         heading: "UniFi devices",
@@ -118,15 +118,15 @@ export function registerDeviceTools(server: McpServer, client: UniFiClient): voi
       inputSchema: {
         siteId: siteIdField,
         deviceId: uuidField("Device ID (UUID from unifi_list_devices)"),
-        response_format: responseFormatField,
+        responseFormat: responseFormatField,
       },
       annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     },
-    async ({ siteId, deviceId, response_format }) =>
+    async ({ siteId, deviceId, responseFormat }) =>
       guard(async () => {
         const site = await client.resolveSiteId(siteId);
         const d = await client.get<DeviceDetails>(`/v1/sites/${site}/devices/${deviceId}`);
-        if (response_format === ResponseFormat.JSON) return textResult(jsonBlock(d));
+        if (responseFormat === ResponseFormat.JSON) return textResult(jsonBlock(d));
 
         const ports = (d.interfaces?.ports ?? [])
           .map((p) =>
@@ -163,15 +163,15 @@ export function registerDeviceTools(server: McpServer, client: UniFiClient): voi
       inputSchema: {
         siteId: siteIdField,
         deviceId: uuidField("Device ID (UUID from unifi_list_devices)"),
-        response_format: responseFormatField,
+        responseFormat: responseFormatField,
       },
       annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     },
-    async ({ siteId, deviceId, response_format }) =>
+    async ({ siteId, deviceId, responseFormat }) =>
       guard(async () => {
         const site = await client.resolveSiteId(siteId);
         const s = await client.get<DeviceStatistics>(`/v1/sites/${site}/devices/${deviceId}/statistics/latest`);
-        if (response_format === ResponseFormat.JSON) return textResult(jsonBlock(s));
+        if (responseFormat === ResponseFormat.JSON) return textResult(jsonBlock(s));
         const mbps = (bps?: number) => (bps === undefined ? undefined : `${(bps / 1_000_000).toFixed(1)} Mbps`);
         return textResult(
           lines(
@@ -197,15 +197,15 @@ export function registerDeviceTools(server: McpServer, client: UniFiClient): voi
       inputSchema: {
         limit: limitField,
         offset: offsetField,
-        response_format: responseFormatField,
+        responseFormat: responseFormatField,
       },
       annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     },
-    async ({ limit, offset, response_format }) =>
+    async ({ limit, offset, responseFormat }) =>
       guard(async () => {
         const page = await client.page<PendingDevice>("/v1/pending-devices", { limit, offset });
         if (page.data.length === 0) return textResult("No devices are pending adoption.");
-        if (response_format === ResponseFormat.JSON) return textResult(jsonBlock(page));
+        if (responseFormat === ResponseFormat.JSON) return textResult(jsonBlock(page));
         const body = page.data
           .map((d) =>
             lines(

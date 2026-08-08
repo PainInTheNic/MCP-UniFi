@@ -75,17 +75,17 @@ export function registerSwitchingTools(server: McpServer, client: UniFiClient): 
         filter: filterField,
         limit: limitField,
         offset: offsetField,
-        response_format: responseFormatField,
+        responseFormat: responseFormatField,
       },
       annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     },
-    async ({ siteId, filter, limit, offset, response_format }) =>
+    async ({ siteId, filter, limit, offset, responseFormat }) =>
       runListTool<Lag>({
         client,
         siteId,
         limit,
         offset,
-        format: response_format,
+        format: responseFormat,
         params: filter ? { filter } : undefined,
         path: (site) => `/v1/sites/${site}/switching/lags`,
         heading: "Link aggregation groups (LAGs)",
@@ -109,15 +109,15 @@ export function registerSwitchingTools(server: McpServer, client: UniFiClient): 
       inputSchema: {
         siteId: siteIdField,
         lagId: uuidField("LAG ID (UUID from unifi_list_lags)"),
-        response_format: responseFormatField,
+        responseFormat: responseFormatField,
       },
       annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     },
-    async ({ siteId, lagId, response_format }) =>
+    async ({ siteId, lagId, responseFormat }) =>
       guard(async () => {
         const site = await client.resolveSiteId(siteId);
         const l = await client.get<Lag>(`/v1/sites/${site}/switching/lags/${lagId}`);
-        if (response_format === ResponseFormat.JSON) return textResult(jsonBlock(l));
+        if (responseFormat === ResponseFormat.JSON) return textResult(jsonBlock(l));
         return textResult(
           lines(
             `## LAG${l.type ? ` (${l.type})` : ""}`,
@@ -139,17 +139,17 @@ export function registerSwitchingTools(server: McpServer, client: UniFiClient): 
         filter: filterField,
         limit: limitField,
         offset: offsetField,
-        response_format: responseFormatField,
+        responseFormat: responseFormatField,
       },
       annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     },
-    async ({ siteId, filter, limit, offset, response_format }) =>
+    async ({ siteId, filter, limit, offset, responseFormat }) =>
       runListTool<McLagDomain>({
         client,
         siteId,
         limit,
         offset,
-        format: response_format,
+        format: responseFormat,
         params: filter ? { filter } : undefined,
         path: (site) => `/v1/sites/${site}/switching/mc-lag-domains`,
         heading: "MC-LAG domains",
@@ -176,15 +176,15 @@ export function registerSwitchingTools(server: McpServer, client: UniFiClient): 
       inputSchema: {
         siteId: siteIdField,
         mcLagDomainId: uuidField("MC-LAG domain ID (UUID from unifi_list_mclag_domains)"),
-        response_format: responseFormatField,
+        responseFormat: responseFormatField,
       },
       annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     },
-    async ({ siteId, mcLagDomainId, response_format }) =>
+    async ({ siteId, mcLagDomainId, responseFormat }) =>
       guard(async () => {
         const site = await client.resolveSiteId(siteId);
         const d = await client.get<McLagDomain>(`/v1/sites/${site}/switching/mc-lag-domains/${mcLagDomainId}`);
-        if (response_format === ResponseFormat.JSON) return textResult(jsonBlock(d));
+        if (responseFormat === ResponseFormat.JSON) return textResult(jsonBlock(d));
         const peers = (d.peers ?? [])
           .map(
             (p) =>
@@ -197,7 +197,7 @@ export function registerSwitchingTools(server: McpServer, client: UniFiClient): 
             line("ID", `\`${d.id}\``),
             line("LAGs", d.lags?.length ? String(d.lags.length) : undefined),
             peers ? `- **Peers**:\n${peers}` : undefined,
-          ) + "\n\nUse response_format='json' for the complete configuration.",
+          ) + "\n\nUse responseFormat='json' for the complete configuration.",
         );
       }),
   );
@@ -213,17 +213,17 @@ export function registerSwitchingTools(server: McpServer, client: UniFiClient): 
         filter: filterField,
         limit: limitField,
         offset: offsetField,
-        response_format: responseFormatField,
+        responseFormat: responseFormatField,
       },
       annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     },
-    async ({ siteId, filter, limit, offset, response_format }) =>
+    async ({ siteId, filter, limit, offset, responseFormat }) =>
       runListTool<SwitchStack>({
         client,
         siteId,
         limit,
         offset,
-        format: response_format,
+        format: responseFormat,
         params: filter ? { filter } : undefined,
         path: (site) => `/v1/sites/${site}/switching/switch-stacks`,
         heading: "Switch stacks",
@@ -249,15 +249,15 @@ export function registerSwitchingTools(server: McpServer, client: UniFiClient): 
       inputSchema: {
         siteId: siteIdField,
         switchStackId: uuidField("Switch stack ID (UUID from unifi_list_switch_stacks)"),
-        response_format: responseFormatField,
+        responseFormat: responseFormatField,
       },
       annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     },
-    async ({ siteId, switchStackId, response_format }) =>
+    async ({ siteId, switchStackId, responseFormat }) =>
       guard(async () => {
         const site = await client.resolveSiteId(siteId);
         const s = await client.get<SwitchStack>(`/v1/sites/${site}/switching/switch-stacks/${switchStackId}`);
-        if (response_format === ResponseFormat.JSON) return textResult(jsonBlock(s));
+        if (responseFormat === ResponseFormat.JSON) return textResult(jsonBlock(s));
         const members = (s.members ?? []).map((m) => `  - \`${m.deviceId ?? "?"}\``).join("\n");
         return textResult(
           lines(
@@ -265,7 +265,7 @@ export function registerSwitchingTools(server: McpServer, client: UniFiClient): 
             line("ID", `\`${s.id}\``),
             line("LAGs", s.lags?.length ? String(s.lags.length) : undefined),
             members ? `- **Members**:\n${members}` : undefined,
-          ) + "\n\nUse response_format='json' for the complete configuration.",
+          ) + "\n\nUse responseFormat='json' for the complete configuration.",
         );
       }),
   );

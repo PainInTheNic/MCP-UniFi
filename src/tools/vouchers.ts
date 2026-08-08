@@ -55,17 +55,17 @@ export function registerVoucherTools(server: McpServer, client: UniFiClient): vo
         filter: filterField,
         limit: limitField,
         offset: offsetField,
-        response_format: responseFormatField,
+        responseFormat: responseFormatField,
       },
       annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     },
-    async ({ siteId, filter, limit, offset, response_format }) =>
+    async ({ siteId, filter, limit, offset, responseFormat }) =>
       runListTool<Voucher>({
         client,
         siteId,
         limit,
         offset,
-        format: response_format,
+        format: responseFormat,
         params: filter ? { filter } : undefined,
         path: (site) => `/v1/sites/${site}/hotspot/vouchers`,
         heading: "Hotspot vouchers",
@@ -83,15 +83,15 @@ export function registerVoucherTools(server: McpServer, client: UniFiClient): vo
       inputSchema: {
         siteId: siteIdField,
         voucherId: uuidField("Voucher ID (UUID from unifi_list_vouchers)"),
-        response_format: responseFormatField,
+        responseFormat: responseFormatField,
       },
       annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     },
-    async ({ siteId, voucherId, response_format }) =>
+    async ({ siteId, voucherId, responseFormat }) =>
       guard(async () => {
         const site = await client.resolveSiteId(siteId);
         const v = await client.get<Voucher>(`/v1/sites/${site}/hotspot/vouchers/${voucherId}`);
-        if (response_format === ResponseFormat.JSON) return textResult(jsonBlock(v));
+        if (responseFormat === ResponseFormat.JSON) return textResult(jsonBlock(v));
         return textResult(`## Voucher ${v.code ?? voucherId}\n\n${voucherBullet(v)}`);
       }),
   );

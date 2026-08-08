@@ -85,17 +85,17 @@ export function registerFirewallTools(server: McpServer, client: UniFiClient): v
         filter: filterField,
         limit: limitField,
         offset: offsetField,
-        response_format: responseFormatField,
+        responseFormat: responseFormatField,
       },
       annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     },
-    async ({ siteId, filter, limit, offset, response_format }) =>
+    async ({ siteId, filter, limit, offset, responseFormat }) =>
       runListTool<FirewallPolicy>({
         client,
         siteId,
         limit,
         offset,
-        format: response_format,
+        format: responseFormat,
         params: filter ? { filter } : undefined,
         path: (site) => `/v1/sites/${site}/firewall/policies`,
         heading: "Firewall policies",
@@ -170,17 +170,17 @@ export function registerFirewallTools(server: McpServer, client: UniFiClient): v
         siteId: siteIdField,
         limit: limitField,
         offset: offsetField,
-        response_format: responseFormatField,
+        responseFormat: responseFormatField,
       },
       annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     },
-    async ({ siteId, limit, offset, response_format }) =>
+    async ({ siteId, limit, offset, responseFormat }) =>
       runListTool<FirewallZone>({
         client,
         siteId,
         limit,
         offset,
-        format: response_format,
+        format: responseFormat,
         path: (site) => `/v1/sites/${site}/firewall/zones`,
         heading: "Firewall zones",
         emptyMessage: "No firewall zones found on this site.",
@@ -204,17 +204,17 @@ export function registerFirewallTools(server: McpServer, client: UniFiClient): v
         filter: filterField,
         limit: limitField,
         offset: offsetField,
-        response_format: responseFormatField,
+        responseFormat: responseFormatField,
       },
       annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     },
-    async ({ siteId, filter, limit, offset, response_format }) =>
+    async ({ siteId, filter, limit, offset, responseFormat }) =>
       runListTool<AclRule>({
         client,
         siteId,
         limit,
         offset,
-        format: response_format,
+        format: responseFormat,
         params: filter ? { filter } : undefined,
         path: (site) => `/v1/sites/${site}/acl-rules`,
         heading: "ACL rules",
@@ -261,17 +261,17 @@ export function registerFirewallTools(server: McpServer, client: UniFiClient): v
         filter: filterField,
         limit: limitField,
         offset: offsetField,
-        response_format: responseFormatField,
+        responseFormat: responseFormatField,
       },
       annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     },
-    async ({ siteId, filter, limit, offset, response_format }) =>
+    async ({ siteId, filter, limit, offset, responseFormat }) =>
       runListTool<DnsPolicy>({
         client,
         siteId,
         limit,
         offset,
-        format: response_format,
+        format: responseFormat,
         params: filter ? { filter } : undefined,
         path: (site) => `/v1/sites/${site}/dns/policies`,
         heading: "DNS records / policies",
@@ -293,15 +293,15 @@ export function registerFirewallTools(server: McpServer, client: UniFiClient): v
       inputSchema: {
         siteId: siteIdField,
         dnsPolicyId: uuidField("DNS policy ID (UUID from unifi_list_dns_policies)"),
-        response_format: responseFormatField,
+        responseFormat: responseFormatField,
       },
       annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     },
-    async ({ siteId, dnsPolicyId, response_format }) =>
+    async ({ siteId, dnsPolicyId, responseFormat }) =>
       guard(async () => {
         const site = await client.resolveSiteId(siteId);
         const p = await client.get<DnsPolicy>(`/v1/sites/${site}/dns/policies/${dnsPolicyId}`);
-        if (response_format === ResponseFormat.JSON) return textResult(jsonBlock(p));
+        if (responseFormat === ResponseFormat.JSON) return textResult(jsonBlock(p));
         return textResult(
           lines(
             `## ${p.domain ?? "DNS policy"}${p.enabled === false ? " (disabled)" : ""}`,
@@ -326,17 +326,17 @@ export function registerFirewallTools(server: McpServer, client: UniFiClient): v
         filter: filterField,
         limit: limitField,
         offset: offsetField,
-        response_format: responseFormatField,
+        responseFormat: responseFormatField,
       },
       annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     },
-    async ({ siteId, filter, limit, offset, response_format }) =>
+    async ({ siteId, filter, limit, offset, responseFormat }) =>
       runListTool<TrafficMatchingList>({
         client,
         siteId,
         limit,
         offset,
-        format: response_format,
+        format: responseFormat,
         params: filter ? { filter } : undefined,
         path: (site) => `/v1/sites/${site}/traffic-matching-lists`,
         heading: "Traffic matching lists",

@@ -52,9 +52,49 @@ export function errorResult(message: string): CallToolResult {
   return { isError: true, content: [{ type: "text", text: message }] };
 }
 
-/** Render an object as an indented JSON code block. */
+/**
+ * Keys whose STRING values are treated as credentials and blanked before any
+ * response leaves the server. String-only by design: fields like
+ * `presharedKeyNetworkIds` (an array of IDs) must NOT be redacted.
+ */
+const SECRET_KEY = /passphrase|password|psk|secret|private[_-]?key|preshared[_-]?key|\btoken\b|credential|api[_-]?key/i;
+
+function redactInPlace(obj: unknown): void {
+  if (obj === null || typeof obj !== "object") return;
+  for (const [key, value] of Object.entries(obj as Record<string, unknown>)) {
+    if (typeof value === "string" && SECRET_KEY.test(key)) {
+      (obj as Record<string, unknown>)[key] = "[redacted]";
+    } else {
+      redactInPlace(value);
+    }
+  }
+}
+
+/** Deep-clone a value with all credential-looking string fields blanked. */
+export function redactedClone<T>(value: T): T {
+  const clone = structuredClone(value);
+  redactInPlace(clone);
+  return clone;
+}
+
+/** Render an object as an indented JSON code block (credentials redacted). */
 export function jsonBlock(value: unknown): string {
-  return "```json\n" + JSON.stringify(value, null, 2) + "\n```";
+  return "```json\n" + JSON.stringify(redactedClone(value), null, 2) + "\n```";
+}
+
+/**
+ * Result for JSON-mode responses: emits the (redacted) object both as a
+ * human-readable ```json block AND as machine-parseable structuredContent,
+ * so clients don't have to string-parse the text.
+ */
+export function jsonResult(prefix: string, value: unknown): CallToolResult {
+  const safe = redactedClone(value);
+  const structured =
+    safe && typeof safe === "object" && !Array.isArray(safe)
+      ? (safe as Record<string, unknown>)
+      : { data: safe };
+  const body = "```json\n" + JSON.stringify(safe, null, 2) + "\n```";
+  return textResult((prefix ? prefix + "\n\n" : "") + body, structured);
 }
 
 /** "key: value" line, omitted entirely when the value is null/undefined/empty. */

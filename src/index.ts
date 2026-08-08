@@ -10,7 +10,7 @@
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { loadConfig } from "./config.js";
+import { loadConfig, redactUrl } from "./config.js";
 import { UniFiClient } from "./unifi-client.js";
 import { registerSiteTools } from "./tools/sites.js";
 import { registerDeviceTools } from "./tools/devices.js";
@@ -36,7 +36,7 @@ async function main(): Promise<void> {
       instructions:
         "Tools for managing a Ubiquiti UniFi network via the official Integration API. " +
         "Start with unifi_list_sites to discover the site ID other tools accept (it is auto-detected when the console has one site). " +
-        "List tools support UniFi filter expressions like \"state.eq('OFFLINE')\" and 'response_format: json' for raw data. " +
+        "List tools support UniFi filter expressions like \"state.eq('OFFLINE')\" and 'responseFormat: json' for raw data. " +
         "Tools annotated destructive (restart, unadopt, power-cycle, revoke access, delete) change live infrastructure — confirm with the user first.",
     },
   );
@@ -53,7 +53,15 @@ async function main(): Promise<void> {
 
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  console.error(`unifi-mcp-server running (console: ${config.baseUrl}, TLS verify: ${config.tlsVerify})`);
+
+  // Graceful shutdown: close the transport so in-flight work settles, then exit.
+  const shutdown = () => {
+    server.close().finally(() => process.exit(0));
+  };
+  process.on("SIGINT", shutdown);
+  process.on("SIGTERM", shutdown);
+
+  console.error(`unifi-mcp-server running (console: ${redactUrl(config.baseUrl)}, TLS verify: ${config.tlsVerify})`);
   if (!config.tlsVerify) {
     console.error(
       "unifi-mcp-server WARNING: TLS certificate verification is DISABLED (UNIFI_TLS_VERIFY=false). " +

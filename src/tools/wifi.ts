@@ -40,17 +40,17 @@ export function registerWifiTools(server: McpServer, client: UniFiClient): void 
         siteId: siteIdField,
         limit: limitField,
         offset: offsetField,
-        response_format: responseFormatField,
+        responseFormat: responseFormatField,
       },
       annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     },
-    async ({ siteId, limit, offset, response_format }) =>
+    async ({ siteId, limit, offset, responseFormat }) =>
       runListTool<WifiBroadcast>({
         client,
         siteId,
         limit,
         offset,
-        format: response_format,
+        format: responseFormat,
         path: (site) => `/v1/sites/${site}/wifi/broadcasts`,
         heading: "WiFi networks (SSIDs)",
         emptyMessage: "No WiFi networks configured on this site.",
@@ -72,17 +72,17 @@ export function registerWifiTools(server: McpServer, client: UniFiClient): void 
       inputSchema: {
         siteId: siteIdField,
         wifiId: uuidField("WiFi broadcast ID (UUID from unifi_list_wifi)"),
-        response_format: responseFormatField,
+        responseFormat: responseFormatField,
       },
       annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     },
-    async ({ siteId, wifiId, response_format }) =>
+    async ({ siteId, wifiId, responseFormat }) =>
       guard(async () => {
         const site = await client.resolveSiteId(siteId);
         const w = await client.get<WifiBroadcast>(`/v1/sites/${site}/wifi/broadcasts/${wifiId}`);
-        // Never surface WiFi passphrases into the conversation, in either format.
-        redactSecrets(w);
-        if (response_format === ResponseFormat.JSON) return textResult(jsonBlock(w));
+        // Passphrases are blanked centrally by jsonBlock/jsonResult; the
+        // markdown branch below never reads a credential field.
+        if (responseFormat === ResponseFormat.JSON) return textResult(jsonBlock(w));
         return textResult(
           lines(
             `## ${w.name ?? "WiFi network"}${w.enabled === false ? " (disabled)" : ""}${w.hideName ? " [hidden SSID]" : ""}`,
@@ -95,20 +95,8 @@ export function registerWifiTools(server: McpServer, client: UniFiClient): void 
                 ? `\`${w.network.networkId}\` (see unifi_get_network)`
                 : w.network?.type,
             ),
-          ) + "\n\nUse response_format='json' for the complete configuration.",
+          ) + "\n\nUse responseFormat='json' for the complete configuration.",
         );
       }),
   );
-}
-
-/** Recursively blank out any key that looks like a credential. */
-function redactSecrets(obj: unknown): void {
-  if (obj === null || typeof obj !== "object") return;
-  for (const [key, value] of Object.entries(obj as Record<string, unknown>)) {
-    if (/passphrase|password|psk|secret/i.test(key) && typeof value === "string") {
-      (obj as Record<string, unknown>)[key] = "[redacted]";
-    } else {
-      redactSecrets(value);
-    }
-  }
 }

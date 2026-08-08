@@ -72,17 +72,17 @@ export function registerNetworkTools(server: McpServer, client: UniFiClient): vo
         filter: filterField,
         limit: limitField,
         offset: offsetField,
-        response_format: responseFormatField,
+        responseFormat: responseFormatField,
       },
       annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     },
-    async ({ siteId, filter, limit, offset, response_format }) =>
+    async ({ siteId, filter, limit, offset, responseFormat }) =>
       runListTool<Network>({
         client,
         siteId,
         limit,
         offset,
-        format: response_format,
+        format: responseFormat,
         params: filter ? { filter } : undefined,
         path: (site) => `/v1/sites/${site}/networks`,
         heading: "Networks (LANs/VLANs)",
@@ -106,15 +106,15 @@ export function registerNetworkTools(server: McpServer, client: UniFiClient): vo
       inputSchema: {
         siteId: siteIdField,
         networkId: uuidField("Network ID (UUID from unifi_list_networks)"),
-        response_format: responseFormatField,
+        responseFormat: responseFormatField,
       },
       annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     },
-    async ({ siteId, networkId, response_format }) =>
+    async ({ siteId, networkId, responseFormat }) =>
       guard(async () => {
         const site = await client.resolveSiteId(siteId);
         const n = await client.get<Network>(`/v1/sites/${site}/networks/${networkId}`);
-        if (response_format === ResponseFormat.JSON) return textResult(jsonBlock(n));
+        if (responseFormat === ResponseFormat.JSON) return textResult(jsonBlock(n));
         const ip = n.ipv4Configuration;
         const dhcp = ip?.dhcpConfiguration;
         return textResult(
@@ -135,7 +135,7 @@ export function registerNetworkTools(server: McpServer, client: UniFiClient): vo
                   ? `server (${dhcp.ipAddressRange?.start ?? "?"} - ${dhcp.ipAddressRange?.stop ?? "?"}${dhcp.leaseTimeSeconds ? `, lease ${dhcp.leaseTimeSeconds}s` : ""})`
                   : dhcp.mode.toLowerCase(),
             ),
-          ) + "\n\nUse response_format='json' for the complete configuration.",
+          ) + "\n\nUse responseFormat='json' for the complete configuration.",
         );
       }),
   );
@@ -149,15 +149,15 @@ export function registerNetworkTools(server: McpServer, client: UniFiClient): vo
       inputSchema: {
         siteId: siteIdField,
         networkId: uuidField("Network ID (UUID from unifi_list_networks)"),
-        response_format: responseFormatField,
+        responseFormat: responseFormatField,
       },
       annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     },
-    async ({ siteId, networkId, response_format }) =>
+    async ({ siteId, networkId, responseFormat }) =>
       guard(async () => {
         const site = await client.resolveSiteId(siteId);
         const refs = await client.get<NetworkReferences>(`/v1/sites/${site}/networks/${networkId}/references`);
-        if (response_format === ResponseFormat.JSON) return textResult(jsonBlock(refs));
+        if (responseFormat === ResponseFormat.JSON) return textResult(jsonBlock(refs));
         const used = (refs.referenceResources ?? []).filter((r) => (r.referenceCount ?? 0) > 0);
         if (used.length === 0) {
           return textResult("No other resources reference this network — safe to delete without breaking dependents.");
@@ -182,17 +182,17 @@ export function registerNetworkTools(server: McpServer, client: UniFiClient): vo
         siteId: siteIdField,
         limit: limitField,
         offset: offsetField,
-        response_format: responseFormatField,
+        responseFormat: responseFormatField,
       },
       annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     },
-    async ({ siteId, limit, offset, response_format }) =>
+    async ({ siteId, limit, offset, responseFormat }) =>
       runListTool<WanInterface>({
         client,
         siteId,
         limit,
         offset,
-        format: response_format,
+        format: responseFormat,
         path: (site) => `/v1/sites/${site}/wans`,
         heading: "WAN interfaces",
         emptyMessage: "No WAN interfaces found on this site.",
@@ -218,17 +218,17 @@ export function registerNetworkTools(server: McpServer, client: UniFiClient): vo
           .describe("Which VPN objects to list: 'servers' (remote-access VPN) or 'site_to_site' (tunnels between sites)"),
         limit: limitField,
         offset: offsetField,
-        response_format: responseFormatField,
+        responseFormat: responseFormatField,
       },
       annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     },
-    async ({ siteId, kind, limit, offset, response_format }) =>
+    async ({ siteId, kind, limit, offset, responseFormat }) =>
       runListTool<VpnServer>({
         client,
         siteId,
         limit,
         offset,
-        format: response_format,
+        format: responseFormat,
         path: (site) =>
           kind === "servers" ? `/v1/sites/${site}/vpn/servers` : `/v1/sites/${site}/vpn/site-to-site-tunnels`,
         heading: kind === "servers" ? "VPN servers" : "Site-to-site VPN tunnels",

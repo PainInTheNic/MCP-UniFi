@@ -10,7 +10,7 @@
 
 import axios, { AxiosError, type AxiosInstance } from "axios";
 import { Agent } from "node:https";
-import type { UniFiConfig } from "./config.js";
+import { redactUrl, type UniFiConfig } from "./config.js";
 import type { UniFiPage } from "./format.js";
 
 /** Error carrying a message that is safe and useful to show the model. */
@@ -125,7 +125,7 @@ export class UniFiClient {
 
       const code = e.code ?? "";
       if (code === "ECONNREFUSED" || code === "ENOTFOUND" || code === "EHOSTUNREACH") {
-        return `Cannot reach the UniFi console at ${this.config.baseUrl} (${code}). Check UNIFI_BASE_URL, and that this machine is on the same network/VPN as the console.`;
+        return `Cannot reach the UniFi console at ${redactUrl(this.config.baseUrl)} (${code}). Check UNIFI_BASE_URL, and that this machine is on the same network/VPN as the console.`;
       }
       if (code === "ECONNABORTED" || code === "ETIMEDOUT") {
         return `Request to the UniFi console timed out. The console may be busy or unreachable from this machine.`;
@@ -137,7 +137,7 @@ export class UniFiClient {
         code === "UNABLE_TO_VERIFY_LEAF_SIGNATURE" ||
         code === "ERR_CERT_AUTHORITY_INVALID"
       ) {
-        return `TLS certificate validation failed connecting to ${this.config.baseUrl}. UniFi consoles use self-signed certificates by default. If this console's cert is self-signed and the connection path is a trusted LAN, the user can set UNIFI_TLS_VERIFY=false — but that disables verification entirely and would let an on-path attacker intercept the API key, so it is their call to make, not yours.`;
+        return `TLS certificate validation failed connecting to ${redactUrl(this.config.baseUrl)}. UniFi consoles use self-signed certificates by default. If this console's cert is self-signed and the connection path is a trusted LAN, the user can set UNIFI_TLS_VERIFY=false — but that disables verification entirely and would let an on-path attacker intercept the API key, so it is their call to make, not yours.`;
       }
       return `Network error calling the UniFi API: ${e.message}`;
     }

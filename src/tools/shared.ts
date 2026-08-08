@@ -11,7 +11,7 @@ import {
   ResponseFormat,
   UniFiPage,
   errorResult,
-  jsonBlock,
+  jsonResult,
   paginationFooter,
   textResult,
 } from "../format.js";
@@ -64,6 +64,15 @@ export const responseFormatField = z
   .nativeEnum(ResponseFormat)
   .default(ResponseFormat.MARKDOWN)
   .describe("'markdown' for a compact human-readable summary (default), 'json' for full raw API data");
+
+/**
+ * A full resource object for create/update tools. The UniFi config schemas are
+ * large and deeply nested, so rather than half-model them we accept the whole
+ * object and let the caller build it — for updates, fetch the current object
+ * with the matching get tool, change what's needed, and pass it back.
+ */
+export const configField = (description: string) =>
+  z.record(z.string(), z.unknown()).describe(description);
 
 /**
  * Run a tool body with uniform error handling. UniFiApiError messages are
@@ -120,7 +129,7 @@ export async function runListTool<T>(opts: ListToolOptions<T>): Promise<CallTool
     }
 
     if (opts.format === ResponseFormat.JSON) {
-      return textResult(jsonBlock(page));
+      return jsonResult("", page);
     }
 
     // Build the body within a character budget so the pagination footer
@@ -143,5 +152,50 @@ export async function runListTool<T>(opts: ListToolOptions<T>): Promise<CallTool
         ? `\n\n[${omitted} of this page's ${page.data.length} items omitted to fit the size limit — use a smaller 'limit' or a filter.]`
         : "";
     return textResult(heading + bullets.join("\n") + note + "\n" + footer);
+  });
+}
+
+/** POST a new resource and return the created object (JSON, credentials redacted). */
+export async function runCreate<T>(opts: {
+  client: UniFiClient;
+  siteId?: string;
+  path: (site: string) => string;
+  body: unknown;
+  label: string;
+}): Promise<CallToolResult> {
+  return guard(async () => {
+    const site = await opts.client.resolveSiteId(opts.siteId);
+    const created = await opts.client.post<T>(opts.path(site), opts.body);
+    return jsonResult(`Created ${opts.label}.`, created);
+  });
+}
+
+/** PUT a full replacement of a resource and return the updated object. */
+export async function runUpdate<T>(opts: {
+  client: UniFiClient;
+  siteId?: string;
+  path: (site: string) => string;
+  body: unknown;
+  label: string;
+}): Promise<CallToolResult> {
+  return guard(async () => {
+    const site = await opts.client.resolveSiteId(opts.siteId);
+    const updated = await opts.client.put<T>(opts.path(site), opts.body);
+    return jsonResult(`Updated ${opts.label}.`, updated);
+  });
+}
+
+/** DELETE a resource (optionally with query params such as force/filter). */
+export async function runDelete(opts: {
+  client: UniFiClient;
+  siteId?: string;
+  path: (site: string) => string;
+  label: string;
+  params?: Record<string, unknown>;
+}): Promise<CallToolResult> {
+  return guard(async () => {
+    const site = await opts.client.resolveSiteId(opts.siteId);
+    await opts.client.delete(opts.path(site), opts.params);
+    return textResult(`Deleted ${opts.label}.`);
   });
 }

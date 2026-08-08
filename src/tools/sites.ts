@@ -50,15 +50,15 @@ export function registerSiteTools(server: McpServer, client: UniFiClient): void 
       inputSchema: {
         limit: limitField,
         offset: offsetField,
-        response_format: responseFormatField,
+        responseFormat: responseFormatField,
       },
       annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     },
-    async ({ limit, offset, response_format }) =>
+    async ({ limit, offset, responseFormat }) =>
       guard(async () => {
         const page = await client.page<Site>("/v1/sites", { limit, offset });
         if (page.data.length === 0) return textResult("No sites found on this console.");
-        if (response_format === ResponseFormat.JSON) return textResult(jsonBlock(page));
+        if (responseFormat === ResponseFormat.JSON) return textResult(jsonBlock(page));
         const body = page.data
           .map((s) => `- **${s.name ?? s.internalReference ?? "unnamed"}** — id: \`${s.id}\``)
           .join("\n");
