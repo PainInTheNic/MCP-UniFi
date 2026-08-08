@@ -1,0 +1,29 @@
+{
+  "name": "unifi-mcp-server",
+  "version": "1.0.0",
+  "description": "MCP server for managing Ubiquiti UniFi network infrastructure via the official UniFi Network API",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "unifi-mcp-server": "dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsx src/index.ts",
+    "inspect": "npx @modelcontextprotocol/inspector node dist/index.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "axios": "^1.19.0",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@types/node": "^26.2.0",
+    "tsx": "^4.23.11",
+    "typescript": "^7.0.2"
+  }
+}
