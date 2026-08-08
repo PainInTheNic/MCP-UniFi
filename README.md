@@ -56,7 +56,7 @@ npm run build
 ### 3. Register with Claude Code
 
 ```bash
-claude mcp add --scope user unifi --env UNIFI_BASE_URL=https://YOUR_CONSOLE_IP --env UNIFI_API_KEY=YOUR_KEY --env UNIFI_TLS_VERIFY=false -- node "C:\Users\Nic\Documents\Claude\Code\MCP-UniFi\dist\index.js"
+claude mcp add --scope user unifi --env UNIFI_BASE_URL=https://YOUR_CONSOLE_IP --env UNIFI_API_KEY=YOUR_KEY --env UNIFI_TLS_VERIFY=false -- node "C:\path\to\MCP-UniFi\dist\index.js"
 ```
 
 - `--scope user` makes the server available in every project (omit for
