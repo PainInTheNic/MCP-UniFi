@@ -177,3 +177,7 @@ npm run inspect    # open MCP Inspector against the built server
 
 Ground truth for the API: `https://developer.ui.com/network/v10.4.57/openapi.json`
 (also `llms.txt` and a Postman collection at the same base URL).
+
+## License
+
+[MIT](LICENSE) © PainInTheNic
