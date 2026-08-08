@@ -19,6 +19,8 @@ import { registerNetworkTools } from "./tools/networks.js";
 import { registerWifiTools } from "./tools/wifi.js";
 import { registerFirewallTools } from "./tools/firewall.js";
 import { registerVoucherTools } from "./tools/vouchers.js";
+import { registerSwitchingTools } from "./tools/switching.js";
+import { registerSupportingResourceTools } from "./tools/supporting.js";
 
 async function main(): Promise<void> {
   const config = loadConfig();
@@ -36,6 +38,8 @@ async function main(): Promise<void> {
   registerWifiTools(server, client);
   registerFirewallTools(server, client);
   registerVoucherTools(server, client);
+  registerSwitchingTools(server, client);
+  registerSupportingResourceTools(server, client);
 
   const transport = new StdioServerTransport();
   await server.connect(transport);

@@ -252,6 +252,28 @@ export function registerDeviceTools(server: McpServer, client: UniFiClient): voi
   );
 
   server.registerTool(
+    "unifi_unadopt_device",
+    {
+      title: "Remove (Unadopt) Device",
+      description:
+        "Remove (un-adopt) an adopted UniFi device from this site, returning it to the pending-adoption pool. The device keeps running with its current configuration but leaves this controller's management until re-adopted — it is NOT factory-reset. It reappears in unifi_list_pending_devices and can be re-added with unifi_adopt_device. CAUTION: this drops the device from management; confirm with the user before removing infrastructure.",
+      inputSchema: {
+        siteId: siteIdField,
+        deviceId: uuidField("Device ID (UUID from unifi_list_devices)"),
+      },
+      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true },
+    },
+    async ({ siteId, deviceId }) =>
+      guard(async () => {
+        const site = await client.resolveSiteId(siteId);
+        await client.delete(`/v1/sites/${site}/devices/${deviceId}`);
+        return textResult(
+          `Device ${deviceId} removed from management. It will reappear in unifi_list_pending_devices and can be re-adopted with unifi_adopt_device.`,
+        );
+      }),
+  );
+
+  server.registerTool(
     "unifi_restart_device",
     {
       title: "Restart UniFi Device",

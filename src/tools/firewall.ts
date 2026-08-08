@@ -66,6 +66,14 @@ interface DnsPolicy {
   [key: string]: unknown;
 }
 
+/** Traffic matching lists: reusable named IP/domain lists referenced by firewall policies. */
+interface TrafficMatchingList {
+  id: string;
+  name?: string;
+  type?: string;
+  [key: string]: unknown;
+}
+
 export function registerFirewallTools(server: McpServer, client: UniFiClient): void {
   server.registerTool(
     "unifi_list_firewall_policies",
@@ -217,6 +225,28 @@ export function registerFirewallTools(server: McpServer, client: UniFiClient): v
   );
 
   server.registerTool(
+    "unifi_get_acl_rule",
+    {
+      title: "Get ACL Rule Details",
+      description:
+        "Get the full definition of one layer-2/switch ACL rule by ID: source/destination filters (IP- or MAC-based), enforcing-device filter, action, and index. IDs come from unifi_list_acl_rules.",
+      inputSchema: {
+        siteId: siteIdField,
+        aclRuleId: uuidField("ACL rule ID (UUID from unifi_list_acl_rules)"),
+      },
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+    },
+    async ({ siteId, aclRuleId }) =>
+      guard(async () => {
+        const site = await client.resolveSiteId(siteId);
+        const rule = await client.get<AclRule>(`/v1/sites/${site}/acl-rules/${aclRuleId}`);
+        // Source/destination/enforcing-device filters are discriminated unions
+        // whose shape varies by type — raw JSON is the honest representation.
+        return textResult(jsonBlock(rule));
+      }),
+  );
+
+  server.registerTool(
     "unifi_list_dns_policies",
     {
       title: "List DNS Policies",
@@ -244,6 +274,94 @@ export function registerFirewallTools(server: McpServer, client: UniFiClient): v
             `- **${p.domain ?? p.name ?? "unnamed"}**${p.type ? ` (${p.type})` : ""}${p.enabled === false ? " (disabled)" : ""}`,
             line("  id", `\`${p.id}\``),
           ),
+      }),
+  );
+
+  server.registerTool(
+    "unifi_get_dns_policy",
+    {
+      title: "Get DNS Policy Details",
+      description:
+        "Get one DNS filtering/policy entry by ID: domain, type, and enabled state. IDs come from unifi_list_dns_policies.",
+      inputSchema: {
+        siteId: siteIdField,
+        dnsPolicyId: uuidField("DNS policy ID (UUID from unifi_list_dns_policies)"),
+        response_format: responseFormatField,
+      },
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+    },
+    async ({ siteId, dnsPolicyId, response_format }) =>
+      guard(async () => {
+        const site = await client.resolveSiteId(siteId);
+        const p = await client.get<DnsPolicy>(`/v1/sites/${site}/dns/policies/${dnsPolicyId}`);
+        if (response_format === ResponseFormat.JSON) return textResult(jsonBlock(p));
+        return textResult(
+          lines(
+            `## ${p.domain ?? p.name ?? "DNS policy"}${p.enabled === false ? " (disabled)" : ""}`,
+            line("ID", `\`${p.id}\``),
+            line("Domain", p.domain),
+            line("Type", p.type),
+            line("Enabled", p.enabled === undefined ? undefined : p.enabled ? "yes" : "no"),
+          ),
+        );
+      }),
+  );
+
+  // Traffic matching lists: reusable named IP/domain lists referenced by firewall policies.
+  server.registerTool(
+    "unifi_list_traffic_matching_lists",
+    {
+      title: "List Traffic Matching Lists",
+      description:
+        "List reusable traffic-matching lists on a site — named IP/domain/region lists that firewall policies and other rules reference instead of inlining addresses. Use unifi_get_traffic_matching_list for one list's entries.",
+      inputSchema: {
+        siteId: siteIdField,
+        filter: filterField,
+        limit: limitField,
+        offset: offsetField,
+        response_format: responseFormatField,
+      },
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+    },
+    async ({ siteId, filter, limit, offset, response_format }) =>
+      runListTool<TrafficMatchingList>({
+        client,
+        siteId,
+        limit,
+        offset,
+        format: response_format,
+        params: filter ? { filter } : undefined,
+        path: (site) => `/v1/sites/${site}/traffic-matching-lists`,
+        heading: "Traffic matching lists",
+        emptyMessage: "No traffic matching lists configured on this site.",
+        formatItem: (t) =>
+          lines(
+            `- **${t.name ?? "unnamed"}**${t.type ? ` (${t.type})` : ""}`,
+            line("  id", `\`${t.id}\``),
+          ),
+      }),
+  );
+
+  server.registerTool(
+    "unifi_get_traffic_matching_list",
+    {
+      title: "Get Traffic Matching List",
+      description:
+        "Get one traffic-matching list by ID, including its entries. IDs come from unifi_list_traffic_matching_lists.",
+      inputSchema: {
+        siteId: siteIdField,
+        trafficMatchingListId: uuidField("Traffic matching list ID (UUID from unifi_list_traffic_matching_lists)"),
+      },
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+    },
+    async ({ siteId, trafficMatchingListId }) =>
+      guard(async () => {
+        const site = await client.resolveSiteId(siteId);
+        const t = await client.get<TrafficMatchingList>(
+          `/v1/sites/${site}/traffic-matching-lists/${trafficMatchingListId}`,
+        );
+        // Entry contents vary by list type — raw JSON is the honest representation.
+        return textResult(jsonBlock(t));
       }),
   );
 }

@@ -51,6 +51,14 @@ interface VpnServer {
   [key: string]: unknown;
 }
 
+interface NetworkReferences {
+  referenceResources?: Array<{
+    resourceType?: string;
+    referenceCount?: number;
+    references?: Array<{ referenceId?: string }>;
+  }>;
+}
+
 export function registerNetworkTools(server: McpServer, client: UniFiClient): void {
   server.registerTool(
     "unifi_list_networks",
@@ -126,6 +134,39 @@ export function registerNetworkTools(server: McpServer, client: UniFiClient): vo
             ),
           ) + "\n\nUse response_format='json' for the complete configuration.",
         );
+      }),
+  );
+
+  server.registerTool(
+    "unifi_get_network_references",
+    {
+      title: "Get Network References",
+      description:
+        "List what depends on a LAN network/VLAN — clients, devices, WiFi SSIDs, static/OSPF routes, NAT rules, SD-WAN. Check this BEFORE deleting or heavily reconfiguring a network to see what would break. IDs come from unifi_list_networks.",
+      inputSchema: {
+        siteId: siteIdField,
+        networkId: uuidField("Network ID (UUID from unifi_list_networks)"),
+        response_format: responseFormatField,
+      },
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+    },
+    async ({ siteId, networkId, response_format }) =>
+      guard(async () => {
+        const site = await client.resolveSiteId(siteId);
+        const refs = await client.get<NetworkReferences>(`/v1/sites/${site}/networks/${networkId}/references`);
+        if (response_format === ResponseFormat.JSON) return textResult(jsonBlock(refs));
+        const used = (refs.referenceResources ?? []).filter((r) => (r.referenceCount ?? 0) > 0);
+        if (used.length === 0) {
+          return textResult("No other resources reference this network — safe to delete without breaking dependents.");
+        }
+        const body = used
+          .map((r) => {
+            const ids = (r.references ?? []).map((x) => x.referenceId).filter((x): x is string => !!x);
+            const idList = ids.length > 0 && ids.length <= 10 ? `\n  ${ids.map((i) => `\`${i}\``).join(", ")}` : "";
+            return `- **${r.resourceType ?? "?"}**: ${r.referenceCount} reference(s)${idList}`;
+          })
+          .join("\n");
+        return textResult(`## Resources referencing this network\n\n${body}`);
       }),
   );
 

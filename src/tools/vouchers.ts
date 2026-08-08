@@ -75,6 +75,28 @@ export function registerVoucherTools(server: McpServer, client: UniFiClient): vo
   );
 
   server.registerTool(
+    "unifi_get_voucher",
+    {
+      title: "Get Hotspot Voucher Details",
+      description:
+        "Get one hotspot voucher by ID: its code, label, usage counts, time limit, and expiry status. IDs come from unifi_list_vouchers.",
+      inputSchema: {
+        siteId: siteIdField,
+        voucherId: uuidField("Voucher ID (UUID from unifi_list_vouchers)"),
+        response_format: responseFormatField,
+      },
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+    },
+    async ({ siteId, voucherId, response_format }) =>
+      guard(async () => {
+        const site = await client.resolveSiteId(siteId);
+        const v = await client.get<Voucher>(`/v1/sites/${site}/hotspot/vouchers/${voucherId}`);
+        if (response_format === ResponseFormat.JSON) return textResult(jsonBlock(v));
+        return textResult(`## Voucher ${v.code ?? voucherId}\n\n${voucherBullet(v)}`);
+      }),
+  );
+
+  server.registerTool(
     "unifi_generate_vouchers",
     {
       title: "Generate Hotspot Vouchers",

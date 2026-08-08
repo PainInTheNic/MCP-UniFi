@@ -83,6 +83,8 @@ export interface ListToolOptions<T> {
   /** Site-relative path builder, e.g. (siteId) => `/v1/sites/${siteId}/devices` */
   path: (siteId: string) => string;
   siteId?: string;
+  /** Console-wide endpoints (e.g. /v1/countries) have no site — skip resolution. */
+  consoleWide?: boolean;
   limit: number;
   offset: number;
   format: ResponseFormat;
@@ -99,7 +101,7 @@ export interface ListToolOptions<T> {
 /** Fetch one page of a site-scoped list endpoint and format it. */
 export async function runListTool<T>(opts: ListToolOptions<T>): Promise<CallToolResult> {
   return guard(async () => {
-    const siteId = await opts.client.resolveSiteId(opts.siteId);
+    const siteId = opts.consoleWide ? "" : await opts.client.resolveSiteId(opts.siteId);
     const page = await opts.client.page<T>(opts.path(siteId), {
       limit: opts.limit,
       offset: opts.offset,
