@@ -97,6 +97,22 @@ export function jsonResult(prefix: string, value: unknown): CallToolResult {
   return textResult((prefix ? prefix + "\n\n" : "") + body, structured);
 }
 
+/**
+ * A firewall policy's or ACL rule's action as text. Newer UniFi Network versions
+ * (seen on 10.6) return an object such as { type: "ALLOW", allowReturnTraffic: true };
+ * older ones a plain string. Anything else renders as "?".
+ */
+export function formatAction(action: unknown): string {
+  if (typeof action === "string" && action !== "") return action;
+  if (action !== null && typeof action === "object") {
+    const a = action as { type?: unknown; allowReturnTraffic?: unknown };
+    if (typeof a.type === "string" && a.type !== "") {
+      return a.type + (a.allowReturnTraffic === true ? " (+return traffic)" : "");
+    }
+  }
+  return "?";
+}
+
 /** "key: value" line, omitted entirely when the value is null/undefined/empty. */
 export function line(label: string, value: unknown): string | undefined {
   if (value === undefined || value === null || value === "") return undefined;

@@ -7,7 +7,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { UniFiClient } from "../unifi-client.js";
-import { ResponseFormat, jsonBlock, jsonResult, line, lines, textResult } from "../format.js";
+import { ResponseFormat, formatAction, jsonBlock, jsonResult, line, lines, textResult } from "../format.js";
 import {
   configField,
   filterField,
@@ -28,11 +28,14 @@ interface UniFiMetadata {
   origin?: string;
 }
 
+/** A string on older UniFi Network versions, an object on newer ones (see formatAction). */
+type PolicyAction = string | { type?: string; allowReturnTraffic?: boolean };
+
 interface FirewallPolicy {
   id: string;
   name?: string;
   enabled?: boolean;
-  action?: string;
+  action?: PolicyAction;
   source?: { zoneId?: string };
   destination?: { zoneId?: string };
   metadata?: UniFiMetadata;
@@ -56,7 +59,7 @@ interface AclRule {
   id: string;
   name?: string;
   enabled?: boolean;
-  action?: string;
+  action?: PolicyAction;
   type?: string;
   [key: string]: unknown;
 }
@@ -93,8 +96,21 @@ export function registerFirewallTools(server: McpServer, client: UniFiClient): v
       },
       annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     },
-    async ({ siteId, filter, limit, offset, responseFormat }) =>
-      runListTool<FirewallPolicy>({
+    async ({ siteId, filter, limit, offset, responseFormat }) => {
+      // Zone names, so each policy reads "Internal → External" rather than two UUIDs. Markdown only,
+      // and best effort: if the zones can't be read, the IDs are shown instead.
+      const zoneNames = new Map<string, string>();
+      if (responseFormat !== ResponseFormat.JSON) {
+        try {
+          const site = await client.resolveSiteId(siteId);
+          const zones = await client.page<FirewallZone>(`/v1/sites/${site}/firewall/zones`, { limit: 200 });
+          for (const z of zones.data) if (z.name) zoneNames.set(z.id, z.name);
+        } catch {
+          // fall back to zone IDs below
+        }
+      }
+      const zone = (id?: string) => (id ? (zoneNames.get(id) ?? `\`${id}\``) : "?");
+      return runListTool<FirewallPolicy>({
         client,
         siteId,
         limit,
@@ -106,10 +122,12 @@ export function registerFirewallTools(server: McpServer, client: UniFiClient): v
         emptyMessage: "No firewall policies found on this site.",
         formatItem: (p) =>
           lines(
-            `- **${p.name ?? "unnamed"}** — ${p.action ?? "?"}${p.enabled === false ? " (disabled)" : ""}${systemTag(p.metadata)}`,
+            `- **${p.name ?? "unnamed"}** — ${formatAction(p.action)}${p.enabled === false ? " (disabled)" : ""}${systemTag(p.metadata)}`,
             line("  id", `\`${p.id}\``),
+            p.source?.zoneId || p.destination?.zoneId ? line("  zones", `${zone(p.source?.zoneId)} → ${zone(p.destination?.zoneId)}`) : undefined,
           ),
-      }),
+      });
+    },
   );
 
   server.registerTool(
@@ -225,7 +243,7 @@ export function registerFirewallTools(server: McpServer, client: UniFiClient): v
         emptyMessage: "No ACL rules found on this site.",
         formatItem: (r) =>
           lines(
-            `- **${r.name ?? "unnamed"}** — ${r.action ?? "?"}${r.enabled === false ? " (disabled)" : ""}`,
+            `- **${r.name ?? "unnamed"}** — ${formatAction(r.action)}${r.enabled === false ? " (disabled)" : ""}`,
             line("  id", `\`${r.id}\``),
             line("  type", r.type),
           ),
