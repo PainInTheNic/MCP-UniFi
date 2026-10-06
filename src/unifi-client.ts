@@ -22,8 +22,15 @@ interface UniFiSite {
   name?: string;
 }
 
+/** Envelope returned by the legacy (pre-Integration) Network API. */
+interface LegacyEnvelope<T> {
+  meta?: { rc?: string; msg?: string };
+  data?: T[];
+}
+
 export class UniFiClient {
   private readonly http: AxiosInstance;
+  private readonly legacyBaseUrl: string;
   private cachedSites: UniFiSite[] | null = null;
 
   constructor(private readonly config: UniFiConfig) {
@@ -36,6 +43,8 @@ export class UniFiClient {
       },
       httpsAgent: new Agent({ rejectUnauthorized: config.tlsVerify }),
     });
+    // "/proxy/network/integration" -> "/proxy/network/api"
+    this.legacyBaseUrl = `${config.baseUrl}${config.apiPath.replace(/\/integration$/, "")}/api`;
   }
 
   async get<T>(path: string, params?: Record<string, unknown>): Promise<T> {
@@ -64,21 +73,54 @@ export class UniFiClient {
   }
 
   /**
+   * GET from the console's legacy Network API (/proxy/network/api/...), which
+   * also accepts the API key. Undocumented and unversioned — use only for data
+   * the Integration API does not expose, since Ubiquiti may change it freely.
+   * Absolute URL, so axios bypasses the Integration API baseURL.
+   */
+  async getLegacy<T>(path: string): Promise<T[]> {
+    const envelope = await this.request<LegacyEnvelope<T>>("GET", `${this.legacyBaseUrl}${path}`);
+    if (envelope?.meta?.rc !== "ok") {
+      const msg = envelope?.meta?.msg ? `: ${envelope.meta.msg}` : "";
+      throw new UniFiApiError(`Legacy Network API call ${path} failed${msg}.`);
+    }
+    return envelope.data ?? [];
+  }
+
+  /**
    * Resolve the site to operate on. Most consoles have exactly one site, so
    * tools accept an optional siteId and fall back to the only site when
    * unambiguous.
    */
   async resolveSiteId(siteId?: string): Promise<string> {
     if (siteId && siteId.trim() !== "") return siteId.trim();
+    const sites = await this.listSites();
+    if (sites.length === 1) return sites[0].id;
+    const names = sites.map((s) => `"${s.name ?? s.internalReference ?? "?"}" (id: ${s.id})`).join(", ");
+    throw new UniFiApiError(
+      `This console has ${sites.length} sites, so 'siteId' is required. Available sites: ${names || "none found"}.`,
+    );
+  }
+
+  /**
+   * Resolve a site to its legacy short name (e.g. "default"), which legacy API
+   * paths use instead of the UUID. Charset-checked before it goes into a path.
+   */
+  async resolveSiteReference(siteId?: string): Promise<string> {
+    const id = await this.resolveSiteId(siteId);
+    const ref = (await this.listSites()).find((s) => s.id === id)?.internalReference;
+    if (!ref || !/^[A-Za-z0-9_-]+$/.test(ref)) {
+      throw new UniFiApiError(`Site ${id} was not found on this console, or has no usable internal reference.`);
+    }
+    return ref;
+  }
+
+  private async listSites(): Promise<UniFiSite[]> {
     if (this.cachedSites === null) {
       const page = await this.page<UniFiSite>("/v1/sites", { limit: 200 });
       this.cachedSites = page.data;
     }
-    if (this.cachedSites.length === 1) return this.cachedSites[0].id;
-    const names = this.cachedSites.map((s) => `"${s.name ?? s.internalReference ?? "?"}" (id: ${s.id})`).join(", ");
-    throw new UniFiApiError(
-      `This console has ${this.cachedSites.length} sites, so 'siteId' is required. Available sites: ${names || "none found"}.`,
-    );
+    return this.cachedSites;
   }
 
   private async request<T>(
@@ -91,7 +133,7 @@ export class UniFiClient {
       const response = await this.http.request<T>({ method, url: path, data: body, params });
       return response.data;
     } catch (error) {
-      throw new UniFiApiError(this.describeError(error, method, path));
+      throw new UniFiApiError(this.describeError(error, method, redactUrl(path)));
     }
   }
 

@@ -87,11 +87,12 @@ Verify with `claude mcp list`, then just ask Claude things like:
 | `UNIFI_TLS_VERIFY` | no | `true` | TLS cert validation (secure by default). Set `false` only for self-signed console certs on a trusted LAN — it allows on-path interception of the API key. |
 | `UNIFI_API_PATH` | no | `/proxy/network/integration` | Path prefix override (rarely needed) |
 
-## Tools (70)
+## Tools (73)
 
-**Read-only (37)** — safe, no side effects:
+**Read-only (40)** — safe, no side effects:
 
-- *Discovery*: `unifi_get_application_info`, `unifi_list_sites`
+- *Discovery*: `unifi_get_application_info`, `unifi_get_system_info`,
+  `unifi_list_sites`
 - *Devices*: `unifi_list_devices`, `unifi_get_device`,
   `unifi_get_device_statistics`, `unifi_list_pending_devices`
 - *Clients*: `unifi_list_clients`, `unifi_get_client`
@@ -99,8 +100,9 @@ Verify with `claude mcp list`, then just ask Claude things like:
   `unifi_get_network_references`, `unifi_list_wans`, `unifi_list_vpn`
 - *WiFi*: `unifi_list_wifi`, `unifi_get_wifi`
 - *Firewall / security*: `unifi_list_firewall_policies`,
-  `unifi_get_firewall_policy`, `unifi_list_firewall_zones`,
-  `unifi_list_acl_rules`, `unifi_get_acl_rule`, `unifi_list_dns_policies`,
+  `unifi_get_firewall_policy`, `unifi_get_firewall_policy_ordering`,
+  `unifi_list_firewall_zones`, `unifi_list_acl_rules`, `unifi_get_acl_rule`,
+  `unifi_get_acl_rule_ordering`, `unifi_list_dns_policies`,
   `unifi_get_dns_policy`, `unifi_list_traffic_matching_lists`,
   `unifi_get_traffic_matching_list`
 - *Switching*: `unifi_list_lags`, `unifi_get_lag`, `unifi_list_mclag_domains`,
@@ -142,6 +144,11 @@ need, and pass it back. List tools support `limit`/`offset` pagination and
 UniFi filter expressions, e.g. `state.eq('OFFLINE')`,
 `access.type.eq('GUEST')`, `name.like('Office*')`. Every tool also accepts
 `responseFormat: 'json'` for the raw API object.
+
+`unifi_get_system_info` (Network app version and update availability) reads
+the console's legacy, undocumented Network API, which also accepts the API
+key. It may break on a future Network version. UniFi OS update availability
+needs an admin login session, so no tool can report it.
 
 ## Security notes
 
