@@ -177,7 +177,14 @@ export function registerFirewallTools(server: McpServer, client: UniFiClient): v
         // Send only the update-schema fields: server-managed id/index/metadata
         // are response-only and not part of the "Create or update" contract.
         const { id: _id, index: _index, metadata: _metadata, ...updatable } = policy;
-        await client.put(`/v1/sites/${site}/firewall/policies/${policyId}`, { ...updatable, enabled });
+        // The body is the raw (unredacted) policy plus a boolean, so a
+        // "[redacted]" in it is the user's own name/description text, not a
+        // placeholder copied back from a read: skip the write-back guard.
+        await client.put(
+          `/v1/sites/${site}/firewall/policies/${policyId}`,
+          { ...updatable, enabled },
+          { bodyFromConsole: true },
+        );
         return textResult(`Firewall policy "${policy.name ?? policyId}" is now ${enabled ? "ENABLED" : "DISABLED"}.`);
       }),
   );

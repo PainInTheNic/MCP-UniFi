@@ -155,7 +155,15 @@ needs an admin login session, so no tool can report it.
 - The API key is only read from the environment and never appears in tool
   output or logs.
 - WiFi passphrases and any credential-looking fields are redacted from
-  responses.
+  responses (shown as `[redacted]`). Write tools refuse any value you or
+  Claude supply that contains that placeholder (anywhere in the request,
+  names included) before sending anything, so a fetch-modify-write can never
+  save it as the literal new passphrase — supply the real value or leave the
+  field out. (`unifi_set_firewall_policy_enabled` is exempt: it writes back
+  the console's own unredacted copy of the policy plus the new on/off state.)
+- HTTP redirects are never followed, so the `X-API-KEY` header cannot be
+  forwarded to another host; a redirect is reported as an error pointing at
+  `UNIFI_BASE_URL`.
 - TLS verification is ON by default. `UNIFI_TLS_VERIFY=false` is an explicit
   opt-out for self-signed console certs (the server logs a warning); install a
   proper certificate on the console to remove the need for it.
@@ -179,6 +187,7 @@ require the unofficial legacy API (a possible phase 2):
 ```bash
 npm run dev        # run from source (tsx)
 npm run build      # compile to dist/
+npm test           # offline unit tests (node:test via tsx)
 npm run inspect    # open MCP Inspector against the built server
 ```
 

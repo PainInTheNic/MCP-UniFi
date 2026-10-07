@@ -4,8 +4,8 @@
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { UniFiClient } from "../unifi-client.js";
-import { ResponseFormat, jsonBlock, line, lines, textResult } from "../format.js";
+import { UniFiClient, assertNoRedactedPlaceholder } from "../unifi-client.js";
+import { REDACTED, ResponseFormat, jsonBlock, line, lines, textResult } from "../format.js";
 import {
   filterField,
   guard,
@@ -106,7 +106,13 @@ export function registerVoucherTools(server: McpServer, client: UniFiClient): vo
       inputSchema: {
         siteId: siteIdField,
         count: z.number().int().min(1).max(1000).default(1).describe("How many voucher codes to generate (default 1)"),
-        name: z.string().min(1).max(255).describe("Label for this batch of vouchers, e.g. 'Weekend guests'"),
+        name: z
+          .string()
+          .min(1)
+          .max(255)
+          .describe(
+            `Label for this batch of vouchers, e.g. 'Weekend guests'. Must not contain the text "${REDACTED}" (the placeholder reads show for credentials): a label containing it is refused.`,
+          ),
         timeLimitMinutes: z.number().int().min(1).default(1440).describe("Minutes each voucher grants access for (default 1440 = 24h)"),
         authorizedGuestLimit: z.number().int().min(1).optional().describe("How many guests may redeem one voucher (omit for unlimited)"),
         dataUsageLimitMBytes: z.number().int().min(1).optional().describe("Data cap per guest in megabytes (omit for unlimited)"),
@@ -117,9 +123,7 @@ export function registerVoucherTools(server: McpServer, client: UniFiClient): vo
     },
     async ({ siteId, count, name, timeLimitMinutes, authorizedGuestLimit, dataUsageLimitMBytes, rxRateLimitKbps, txRateLimitKbps }) =>
       guard(async () => {
-        const site = await client.resolveSiteId(siteId);
-        // Note: unlike list endpoints, voucher generation returns {vouchers: [...]}
-        const result = await client.post<{ vouchers?: Voucher[] }>(`/v1/sites/${site}/hotspot/vouchers`, {
+        const body = {
           count,
           name,
           timeLimitMinutes,
@@ -127,7 +131,13 @@ export function registerVoucherTools(server: McpServer, client: UniFiClient): vo
           ...(dataUsageLimitMBytes !== undefined && { dataUsageLimitMBytes }),
           ...(rxRateLimitKbps !== undefined && { rxRateLimitKbps }),
           ...(txRateLimitKbps !== undefined && { txRateLimitKbps }),
-        });
+        };
+        // 'name' is free text: check it before site resolution, so a refused
+        // write makes no request at all.
+        assertNoRedactedPlaceholder(body);
+        const site = await client.resolveSiteId(siteId);
+        // Note: unlike list endpoints, voucher generation returns {vouchers: [...]}
+        const result = await client.post<{ vouchers?: Voucher[] }>(`/v1/sites/${site}/hotspot/vouchers`, body);
         const vouchers = result.vouchers ?? [];
         const codes = vouchers.map((v) => `- **${v.code ?? "?"}** (id: \`${v.id}\`)`).join("\n");
         return textResult(`Generated ${vouchers.length} voucher(s) labeled "${name}" (${timeLimitMinutes} min each):\n\n${codes}`);

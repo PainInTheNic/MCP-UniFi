@@ -109,7 +109,7 @@ export function registerWifiTools(server: McpServer, client: UniFiClient): void 
     {
       title: "Create WiFi Network (SSID)",
       description:
-        "Create a new WiFi network (SSID / broadcast). 'config' is the full broadcast object. Because the required fields vary by type (a STANDARD SSID additionally needs advertiseDeviceName, arpProxyEnabled, broadcastingFrequenciesGHz, and bssTransitionEnabled on top of the base name, enabled, type, securityConfiguration, network, hideName, clientIsolationEnabled, uapsdEnabled, channel2gLockedTo6, dtimPeriod2gLockedTo3, multicastToUnicastConversionEnabled), the reliable path is to fetch an existing SSID with unifi_get_wifi (responseFormat='json'), copy its shape, and change name/network. Note the passphrase is redacted in reads, so set a real passphrase in securityConfiguration. Returns the created SSID.",
+        "Create a new WiFi network (SSID / broadcast). 'config' is the full broadcast object. Because the required fields vary by type (a STANDARD SSID additionally needs advertiseDeviceName, arpProxyEnabled, broadcastingFrequenciesGHz, and bssTransitionEnabled on top of the base name, enabled, type, securityConfiguration, network, hideName, clientIsolationEnabled, uapsdEnabled, channel2gLockedTo6, dtimPeriod2gLockedTo3, multicastToUnicastConversionEnabled), the reliable path is to fetch an existing SSID with unifi_get_wifi (responseFormat='json'), copy its shape, and change name/network. Reads show the passphrase as '[redacted]' and a config still containing that placeholder is refused, so set a real passphrase in securityConfiguration (ask the user). Returns the created SSID.",
       inputSchema: {
         siteId: siteIdField,
         config: configField(
@@ -133,7 +133,7 @@ export function registerWifiTools(server: McpServer, client: UniFiClient): void 
     {
       title: "Update WiFi Network (SSID)",
       description:
-        "Replace the configuration of an existing WiFi SSID (full PUT). Fetch the current object with unifi_get_wifi (responseFormat='json'), modify it, and pass the whole object as 'config'. NOTE: the passphrase is redacted in reads, so include a real passphrase in config or the security config will be rejected. CAUTION: reconfiguring an SSID disconnects its connected clients — confirm with the user. IDs come from unifi_list_wifi.",
+        "Replace the configuration of an existing WiFi SSID (full PUT). Fetch the current object with unifi_get_wifi (responseFormat='json'), modify it, and pass the whole object as 'config'. NOTE: reads show the passphrase as '[redacted]', and a config still containing that placeholder is refused before anything is sent (it would otherwise become the literal new passphrase) — put the real passphrase back in securityConfiguration (ask the user for it). CAUTION: reconfiguring an SSID disconnects its connected clients — confirm with the user. IDs come from unifi_list_wifi.",
       inputSchema: {
         siteId: siteIdField,
         wifiId: uuidField("WiFi broadcast ID (UUID from unifi_list_wifi)"),

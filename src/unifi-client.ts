@@ -11,10 +11,31 @@
 import axios, { AxiosError, type AxiosInstance } from "axios";
 import { Agent } from "node:https";
 import { redactUrl, type UniFiConfig } from "./config.js";
-import type { UniFiPage } from "./format.js";
+import { REDACTED, findRedactedPlaceholders, type UniFiPage } from "./format.js";
 
 /** Error carrying a message that is safe and useful to show the model. */
 export class UniFiApiError extends Error {}
+
+/**
+ * Refuse a write whose body still carries the REDACTED placeholder that reads
+ * put in place of credentials. In a fetch-modify-write flow it would otherwise
+ * become the literal new value — "[redacted]" is even a valid WPA passphrase.
+ * The client's write methods enforce this; tools that send caller-supplied
+ * text also call it up front, before site resolution, so the refusal comes
+ * before any request at all.
+ */
+export function assertNoRedactedPlaceholder(body: unknown): void {
+  const paths = findRedactedPlaceholders(body);
+  if (paths.length === 0) return;
+  const shown = paths.slice(0, 10).join(", ") + (paths.length > 10 ? `, and ${paths.length - 10} more` : "");
+  // Worded for any field: the match may be a credential copied back from a
+  // read, or just a name or description that happens to contain the text.
+  throw new UniFiApiError(
+    `Refusing to write: the request contains the text "${REDACTED}" at ${shown}. ` +
+      `Reads show "${REDACTED}" in place of credentials, so a value copied back from a read would be saved as that literal text; it is therefore refused anywhere in what you send, even in a name or description. ` +
+      `Put the real value in (if it is a credential, ask the user for it — never guess one), or leave the field out. Nothing was changed on the console.`,
+  );
+}
 
 interface UniFiSite {
   id: string;
@@ -37,6 +58,10 @@ export class UniFiClient {
     this.http = axios.create({
       baseURL: `${config.baseUrl}${config.apiPath}`,
       timeout: 20_000,
+      // Never follow redirects: a followed redirect would re-send the
+      // X-API-KEY header to wherever the Location points, including another
+      // host. A 3xx surfaces as an error instead (see describeError).
+      maxRedirects: 0,
       headers: {
         "X-API-KEY": config.apiKey,
         Accept: "application/json",
@@ -52,14 +77,23 @@ export class UniFiClient {
   }
 
   async post<T>(path: string, body?: unknown): Promise<T> {
+    assertNoRedactedPlaceholder(body);
     return this.request<T>("POST", path, body);
   }
 
-  async put<T>(path: string, body?: unknown): Promise<T> {
+  /**
+   * `bodyFromConsole` skips the placeholder guard for a body built from an
+   * unredacted get() of the same resource rather than from caller input: any
+   * "[redacted]" in it is text the console already stores, so writing it back
+   * changes nothing.
+   */
+  async put<T>(path: string, body?: unknown, opts: { bodyFromConsole?: boolean } = {}): Promise<T> {
+    if (!opts.bodyFromConsole) assertNoRedactedPlaceholder(body);
     return this.request<T>("PUT", path, body);
   }
 
   async patch<T>(path: string, body?: unknown): Promise<T> {
+    assertNoRedactedPlaceholder(body);
     return this.request<T>("PATCH", path, body);
   }
 
@@ -144,6 +178,20 @@ export class UniFiClient {
 
       if (e.response) {
         const status = e.response.status;
+        if (status >= 300 && status < 400) {
+          // Show where it pointed (origin + path only: no userinfo or query).
+          const location = e.response.headers?.["location"];
+          let target = "";
+          if (typeof location === "string" && location !== "") {
+            try {
+              const url = new URL(location, this.config.baseUrl);
+              target = ` to ${url.origin}${url.pathname}`;
+            } catch {
+              // Unparseable Location: leave it out.
+            }
+          }
+          return `The UniFi console answered ${method} ${path} with a redirect (${status})${target} instead of an API response. Redirects are not followed, so the API key was not sent there. Check UNIFI_BASE_URL (and UNIFI_API_PATH, if set): it should be the console's own address, e.g. https://192.168.1.1 — not http:// when the console serves HTTPS, and not a hostname that forwards elsewhere.`;
+        }
         const apiMessage = e.response.data?.message ?? e.response.data?.statusName ?? "";
         const detail = apiMessage ? ` API message: "${apiMessage}".` : "";
         switch (status) {
