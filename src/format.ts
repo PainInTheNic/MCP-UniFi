@@ -52,22 +52,48 @@ export function errorResult(message: string): CallToolResult {
   return { isError: true, content: [{ type: "text", text: message }] };
 }
 
+/** What every redacted credential value is replaced with. */
+export const REDACTED = "[redacted]";
+
 /**
  * Keys whose STRING values are treated as credentials and blanked before any
  * response leaves the server. String-only by design: fields like
  * `presharedKeyNetworkIds` (an array of IDs) must NOT be redacted.
+ *
+ * "token" counts only at the END of a key (token, accessToken, access_token,
+ * X-Auth-Token), so metadata such as tokenType or tokenExpiresAt stays
+ * readable. A leading "x_" is the legacy Network API's own marker for secret
+ * fields (x_passphrase, x_iapp_key, x_shadow...).
  */
-const SECRET_KEY = /passphrase|password|psk|secret|private[_-]?key|preshared[_-]?key|\btoken\b|credential|api[_-]?key/i;
+const SECRET_KEY =
+  /passphrase|passw(?:or)?d|psk|secret|credential|(?:api|auth|private|pre[_-]?shared)[_-]?key|token$|^x_/i;
 
 function redactInPlace(obj: unknown): void {
   if (obj === null || typeof obj !== "object") return;
   for (const [key, value] of Object.entries(obj as Record<string, unknown>)) {
     if (typeof value === "string" && SECRET_KEY.test(key)) {
-      (obj as Record<string, unknown>)[key] = "[redacted]";
+      (obj as Record<string, unknown>)[key] = REDACTED;
     } else {
       redactInPlace(value);
     }
   }
+}
+
+/**
+ * Paths (e.g. "securityConfiguration.passphrase", "entries[2].secret") of
+ * every string in `value` that contains the REDACTED placeholder. Writes are
+ * checked with this: a placeholder copied back from a redacted read would
+ * otherwise be stored as the literal new credential.
+ */
+export function findRedactedPlaceholders(value: unknown, path = ""): string[] {
+  if (typeof value === "string") return value.includes(REDACTED) ? [path || "(the whole body)"] : [];
+  if (value === null || typeof value !== "object") return [];
+  if (Array.isArray(value)) {
+    return value.flatMap((item, i) => findRedactedPlaceholders(item, `${path}[${i}]`));
+  }
+  return Object.entries(value as Record<string, unknown>).flatMap(([key, item]) =>
+    findRedactedPlaceholders(item, path ? `${path}.${key}` : key),
+  );
 }
 
 /** Deep-clone a value with all credential-looking string fields blanked. */

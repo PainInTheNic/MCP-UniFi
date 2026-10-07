@@ -5,9 +5,10 @@
 
 import { z } from "zod";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
-import { UniFiApiError, UniFiClient } from "../unifi-client.js";
+import { UniFiApiError, UniFiClient, assertNoRedactedPlaceholder } from "../unifi-client.js";
 import {
   CHARACTER_LIMIT,
+  REDACTED,
   ResponseFormat,
   UniFiPage,
   errorResult,
@@ -69,10 +70,16 @@ export const responseFormatField = z
  * A full resource object for create/update tools. The UniFi config schemas are
  * large and deeply nested, so rather than half-model them we accept the whole
  * object and let the caller build it — for updates, fetch the current object
- * with the matching get tool, change what's needed, and pass it back.
+ * with the matching get tool, change what's needed, and pass it back. Reads
+ * redact credentials, so runCreate/runUpdate refuse a config that still holds
+ * the placeholder; the description says so up front.
  */
 export const configField = (description: string) =>
-  z.record(z.string(), z.unknown()).describe(description);
+  z
+    .record(z.string(), z.unknown())
+    .describe(
+      `${description} A config with any value still containing "${REDACTED}" (how reads show credentials) is refused: put the real value in, or leave the field out.`,
+    );
 
 /**
  * Run a tool body with uniform error handling. UniFiApiError messages are
@@ -164,6 +171,8 @@ export async function runCreate<T>(opts: {
   label: string;
 }): Promise<CallToolResult> {
   return guard(async () => {
+    // Before site resolution, so a refused write makes no request at all.
+    assertNoRedactedPlaceholder(opts.body);
     const site = await opts.client.resolveSiteId(opts.siteId);
     const created = await opts.client.post<T>(opts.path(site), opts.body);
     return jsonResult(`Created ${opts.label}.`, created);
@@ -179,6 +188,8 @@ export async function runUpdate<T>(opts: {
   label: string;
 }): Promise<CallToolResult> {
   return guard(async () => {
+    // Before site resolution, so a refused write makes no request at all.
+    assertNoRedactedPlaceholder(opts.body);
     const site = await opts.client.resolveSiteId(opts.siteId);
     const updated = await opts.client.put<T>(opts.path(site), opts.body);
     return jsonResult(`Updated ${opts.label}.`, updated);
